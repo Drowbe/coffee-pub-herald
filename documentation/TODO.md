@@ -40,6 +40,6 @@
 
 #### Rename "Enable Broadcast" to Herald (Setting Label)
 - **Issue**: Rename the "Enable Broadcast" setting/label to "Herald" in the settings UI
-- **Status**: PENDING - Needs implementation
-- **Location**: `scripts/settings.js`, `lang/en.json`
-- **Need**: Rename "Enable Broadcast" to "Herald" (setting key can stay `enableBroadcast`). Context-menu toggle for enable/disable was added in 13.0.1.
+- **Status**: CANCELLED - Keeping "Broadcast" wording. The setting enables broadcasting, not the module. Setting label remains "Enable Broadcast"; context menu items remain "Enable Broadcast" / "Disable Broadcast".
+- **Location**: N/A
+- **Need**: (None - reverted/cancelled.)

@@ -42,9 +42,9 @@
         "broadcastCombatViewFill-Hint": "Percent of the viewport the combatant box should fill.",
         "broadcastSpectatorPartyBoxFill-Label": "Spectator Mode View Fill (%)",
         "broadcastSpectatorPartyBoxFill-Hint": "Percent of the viewport the party box should fill.",
-        "notification-not-enabled": "Herald is not enabled.",
-        "context-enable-herald": "Enable Herald",
-        "context-disable-herald": "Disable Herald",
+        "notification-not-enabled": "Broadcast is not enabled.",
+        "context-enable-herald": "Enable Broadcast",
+        "context-disable-herald": "Disable Broadcast",
         "context-hide-show-broadcast-bar": "Hide/Show broadcast bar"
     }
 }

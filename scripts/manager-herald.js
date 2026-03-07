@@ -2131,12 +2131,12 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
-     * If Herald is not enabled, show a notification and return true (caller should return).
+     * If broadcast is not enabled, show a notification and return true (caller should return).
      * @returns {boolean} True if not enabled (notification was shown), false if enabled
      */
     static _warnIfNotEnabled() {
         if (this.isEnabled()) return false;
-        const msg = game.i18n?.localize?.('coffee-pub-herald.notification-not-enabled') ?? 'Herald is not enabled.';
+        const msg = game.i18n?.localize?.('coffee-pub-herald.notification-not-enabled') ?? 'Broadcast is not enabled.';
         ui.notifications?.info?.(msg);
         return true;
     }

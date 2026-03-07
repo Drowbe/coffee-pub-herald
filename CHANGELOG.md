@@ -12,17 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Enable/Disable in context menu**: View Mode menubar tool menu includes "Enable Herald" / "Disable Herald". Toggling refreshes the cameraman client (socket command with `force` so it works when disabling).
+- **Enable/Disable in context menu**: View Mode menubar tool menu includes "Enable Broadcast" / "Disable Broadcast". Toggling refreshes the cameraman client (socket command with `force` so it works when disabling).
 - **Show Combat Bar in Broadcast**: New setting (default on) to show the Blacksmith combat secondary bar (`data-bar-type="combat"`) on the cameraman view when in broadcast mode; disable for a fully clean view.
 - **Menubar and secondary bar hiding**: In broadcast mode, hide `.blacksmith-menubar-container` and `.blacksmith-menubar-secondary`; combat bar is shown when "Show Combat Bar in Broadcast" is enabled.
 - **Follow flyout**: View Mode menu has a "Follow" submenu; followable tokens are listed there (labels without "Follow:" prefix).
 
 ### Changed
 
-- **Menubar context menu on left-click**: View Mode tool opens its menu on **left-click** via Blacksmith's context menu API (`uiContextMenu.show`). Menu includes Enable/Disable Herald, Hide/Show broadcast bar, modes, Mirror, and Follow (flyout). Right-click does nothing.
+- **Menubar context menu on left-click**: View Mode tool opens its menu on **left-click** via Blacksmith's context menu API (`uiContextMenu.show`). Menu includes Enable/Disable Broadcast, Hide/Show broadcast bar, modes, Mirror, and Follow (flyout). Right-click does nothing.
 - **Broadcast button**: No context menu. Click only toggles the broadcast secondary bar (show/hide). Enable/Disable and Hide/Show bar are available only from the View Mode menu.
 - **What Enable controls**: Enable only controls broadcast behavior and cameraman UI; it no longer hides the menubar. Menubar tools stay visible when Herald is disabled so users can turn it back on.
-- **Using tools when disabled**: Clicking any broadcast tool (toggle bar, mode buttons, close/refresh/settings) while Herald is disabled shows a notification: "Herald is not enabled."
+- **Using tools when disabled**: Clicking any broadcast tool (toggle bar, mode buttons, close/refresh/settings) while broadcast is disabled shows a notification: "Broadcast is not enabled."
 - **Visibility override**: Menubar is never hidden via the Blacksmith visibility override (tools always visible); hiding is done via CSS when in broadcast mode.
 - **Refresh on enable/disable**: `_emitBroadcastWindowCommand(action, options)` now accepts `options.force`. When toggling enable/disable, refresh is sent with `{ force: true }` so the cameraman always receives it and reloads.
 
