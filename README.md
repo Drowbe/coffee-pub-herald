@@ -15,6 +15,7 @@
 
 ## IMPORTANT NOTICE
 
+**Herald requires [Coffee Pub Blacksmith](https://github.com/Drowbe/coffee-pub-blacksmith).** Install and enable Blacksmith before Herald. Broadcast tools will not appear without it.
 
 ## Disclaimer
 

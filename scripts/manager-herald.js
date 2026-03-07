@@ -3383,6 +3383,7 @@ this._blacksmith.HookManager.registerHook({
         this._blacksmith?.HookManager?.disposeByContext('broadcast-mode-buttons');
         this._blacksmith?.HookManager?.disposeByContext('broadcast-playerview-sync');
         this._blacksmith?.HookManager?.disposeByContext('broadcast-player-buttons');
+        this._blacksmith?.HookManager?.disposeByContext('broadcast-cleanup');
 
         // Unregister menubar visibility override (if API provides it)
         if (typeof this._blacksmith?.unregisterMenubarVisibilityOverride === 'function') {
