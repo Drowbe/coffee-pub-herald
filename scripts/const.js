@@ -5,7 +5,7 @@
 const moduleData = {
     id: "coffee-pub-herald",
     title: "Coffee Pub Herald",
-    version: "1.0.0",
+    version: "13.0.0",
     authors: [{ name: "COFFEE PUB" }]
 };
 

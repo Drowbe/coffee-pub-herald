@@ -9,7 +9,7 @@ on:
       version:
         description: 'Version to release (without v prefix)'
         required: true
-        default: '12.1.10'
+        default: '13.0.0'
 
 permissions:
   contents: write
@@ -34,22 +34,15 @@ jobs:
       # Create zip file
       - name: Create Zip File
         run: |
-          # Ensure the zip excludes unnecessary files
-          zip -r coffee-pub-blacksmith.zip \
+          zip -r coffee-pub-herald.zip \
             module.json \
             LICENSE \
             README.md \
+            CHANGELOG.md \
             scripts/ \
             styles/ \
-            templates/ \
             lang/ \
-            images/ \
-            sounds/ \
-            packs/ \
-            prompts/ \
-            resources/ \
-            api/ \
-            utilities/ \
+            documentation/ \
             -x "*.git*" -x "*.github*" -x "*node_modules*" -x "*.vscode*"
 
       # Create release
@@ -60,7 +53,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: |
-            coffee-pub-blacksmith.zip
+            coffee-pub-herald.zip
             module.json
           draft: false
           prerelease: false
