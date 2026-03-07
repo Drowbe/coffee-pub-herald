@@ -5,12 +5,15 @@
 
 **Completed in 13.0.1:** Menubar context menu on left-click (View Mode only, via Blacksmith context menu API); Broadcast button as simple toggle (no menu); Follow options in a "Follow" flyout. See `CHANGELOG.md` [13.0.1].
 
+**Completed (not yet in CHANGELOG):** Do Not Broadcast When Cameraman Not Connected — broadcast is only active when the designated cameraman is connected (`user.active`). Send paths (GM viewport, combat targets, mode change, window commands, player viewport) guard with `isBroadcastActive()`. View Mode tooltip shows "Cameraman disconnected" when enabled but cameraman offline. `userConnected` / `userDisconnected` hooks call `_updateBroadcastMode()` and `renderMenubar()`.
+
 
 #### Broadcast: Combat Spectator Mode
 - **Issue**: Add a "Combat Spectator" broadcast mode that follows all tokens in the combat tracker (not just the party)
 - **Status**: PENDING - Needs implementation
 - **Location**: `scripts/manager-herald.js`, `scripts/settings.js`
 - **Need**: 
+  - rename the existing "Specataor mode" to "Party Spectator" mode
   - New broadcast mode similar to Spectator, but frame/follow all combatant tokens (party + NPCs/enemies) instead of only party tokens
   - Use same view-fill/zoom behavior as Spectator (e.g. center on combatant token positions, zoom to fit)
   - Add mode option to broadcast mode selector and settings; optional dedicated view-fill setting (or reuse spectator/combat setting)
@@ -24,13 +27,6 @@
 - **Need**: Use a dropdown/select control for `broadcastUserId` that lists connected users (or all users) instead of free-text input
 
 
-#### Do Not Broadcast When Cameraman Not Connected
-- **Issue**: When the designated cameraman is not connected, broadcast should not be active
-- **Status**: PENDING - Needs implementation
-- **Location**: `scripts/manager-herald.js`, possibly `scripts/settings.js`
-- **Need**: Check that broadcast user is online before enabling broadcast view; disable or hide broadcast UI / mode when cameraman is disconnected
-
-
 #### Verify Menubar Height and Expose as Setting
 - **Issue**: Ensure broadcast/secondary bar height is set correctly; make it a setting if not already
 - **Status**: PENDING - Needs verification and possibly implementation
@@ -38,8 +34,8 @@
 - **Need**: Verify Herald (or Blacksmith) sets menubar/secondary bar height; if not configurable, add a setting for bar height
 
 
-#### Rename "Enable Broadcast" to Herald (Setting Label)
-- **Issue**: Rename the "Enable Broadcast" setting/label to "Herald" in the settings UI
-- **Status**: CANCELLED - Keeping "Broadcast" wording. The setting enables broadcasting, not the module. Setting label remains "Enable Broadcast"; context menu items remain "Enable Broadcast" / "Disable Broadcast".
-- **Location**: N/A
-- **Need**: (None - reverted/cancelled.)
+#### Work with Blacksmith API to Support Text on Secondary Bar
+- **Issue**: Blacksmith secondary bar API currently supports buttons/items and group banners, but not arbitrary bar-level text (e.g. "Cameraman Disconnected" label next to the buttons).
+- **Status**: PENDING - Coordinate with Blacksmith
+- **Location**: Blacksmith Menubar/Secondary Bar API, then `scripts/manager-herald.js`
+- **Need**: Work with Blacksmith API to support text/labels on the secondary bar (not just buttons), so Herald can show e.g. "Cameraman Disconnected" when the cameraman is offline.

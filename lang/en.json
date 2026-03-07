@@ -45,6 +45,7 @@
         "notification-not-enabled": "Broadcast is not enabled.",
         "context-enable-herald": "Enable Broadcast",
         "context-disable-herald": "Disable Broadcast",
-        "context-hide-show-broadcast-bar": "Hide/Show broadcast bar"
+        "context-hide-show-broadcast-bar": "Hide/Show broadcast bar",
+        "view-mode-cameraman-disconnected": "Disconnected"
     }
 }

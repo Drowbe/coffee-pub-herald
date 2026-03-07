@@ -135,6 +135,7 @@ this._blacksmith.HookManager.registerHook({
             priority: 3,
             callback: () => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
+                this._updateBroadcastMode();
                 // Re-render menubar to update view mode button visibility
                 this._blacksmith.renderMenubar();
                 //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
@@ -148,6 +149,7 @@ this._blacksmith.HookManager.registerHook({
             priority: 3,
             callback: () => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
+                this._updateBroadcastMode();
                 // Re-render menubar to update view mode button visibility
                 this._blacksmith.renderMenubar();
                 //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
@@ -791,7 +793,7 @@ this._blacksmith.HookManager.registerHook({
      */
     static async _sendGMViewportSync(position) {
         if (!game.user.isGM) return;
-        if (!this.isEnabled()) return;
+        if (!this.isBroadcastActive()) return;
         if (!canvas?.ready) return;
         if (getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') !== 'gmview') return;
 
@@ -1603,6 +1605,7 @@ this._blacksmith.HookManager.registerHook({
 
     static async _emitCombatTargets(userId) {
         try {
+            if (!this.isBroadcastActive()) return;
             const targetIds = Array.from(game.user?.targets || []).map(t => t?.id).filter(Boolean);
             const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
             if (!blacksmith?.sockets) return;
@@ -2128,6 +2131,26 @@ this._blacksmith.HookManager.registerHook({
      */
     static isEnabled() {
         return getSettingSafely(MODULE.ID, 'enableBroadcast', false) === true;
+    }
+
+    /**
+     * Check if the designated broadcast user (cameraman) is currently connected.
+     * Used so we do not send to or consider broadcast "active" when cameraman is offline.
+     * @returns {boolean} True if broadcast user exists and has an active connection
+     */
+    static _isBroadcastUserConnected() {
+        const user = this._getBroadcastUser();
+        return user ? (user.active === true) : false;
+    }
+
+    /**
+     * Check if broadcast is effectively active: enabled and cameraman is connected.
+     * Use this when sending to the cameraman or when treating broadcast as "on" from the GM side.
+     * On the cameraman client, this equals isEnabled() when they are the broadcast user.
+     * @returns {boolean} True if broadcast is enabled and cameraman is online
+     */
+    static isBroadcastActive() {
+        return this.isEnabled() && this._isBroadcastUserConnected();
     }
 
     /**
@@ -2791,7 +2814,7 @@ this._blacksmith.HookManager.registerHook({
             if (mode === 'playerview-follow') {
                 const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
                 const tokenName = followTokenId ? canvas.tokens.get(followTokenId)?.name : null;
-                return tokenName ? `Follow: ${tokenName}` : 'Follow';
+                return tokenName || 'Follow';
             }
             if (typeof mode === 'string' && mode.startsWith('playerview-')) {
                 const userId = mode.replace('playerview-', '');
@@ -2835,12 +2858,18 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                 if (!this.isEnabled() || !this._getBroadcastUser()) {
                     return 'View Mode';
                 }
+                if (!this._isBroadcastUserConnected()) {
+                    return game.i18n.localize(MODULE.ID + '.view-mode-cameraman-disconnected');
+                }
                 const mode = this._getCachedBroadcastMode();
                 return getModeDisplayName(mode);
             },
             tooltip: () => {
                 if (!this.isEnabled() || !this._getBroadcastUser()) {
                     return 'View Mode (Not Active) - Left-click: open menu';
+                }
+                if (!this._isBroadcastUserConnected()) {
+                    return game.i18n.localize(MODULE.ID + '.view-mode-cameraman-disconnected') + ' - Left-click: open menu';
                 }
                 const mode = this._getCachedBroadcastMode();
                 return `${getModeDisplayName(mode)} - Left-click: open menu`;
@@ -3127,6 +3156,7 @@ this._blacksmith.HookManager.registerHook({
      */
     static async _emitModeChange(mode) {
         try {
+            if (!this.isBroadcastActive()) return;
             this._lastModeEmit = { mode, at: Date.now() };
             const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
             if (!blacksmith?.sockets) return;
@@ -3142,6 +3172,7 @@ this._blacksmith.HookManager.registerHook({
      */
     static async _emitMapView() {
         try {
+            if (!this.isBroadcastActive()) return;
             const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
             if (!blacksmith?.sockets) return;
             await blacksmith.sockets.waitForReady();
@@ -3159,6 +3190,7 @@ this._blacksmith.HookManager.registerHook({
     static async _emitBroadcastWindowCommand(action, options = {}) {
         try {
             if (!options.force && !this.isEnabled()) return;
+            if (!options.force && !this._isBroadcastUserConnected()) return;
             const targetUserId = getSettingSafely(MODULE.ID, 'broadcastUserId', '') || '';
             if (!targetUserId) {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: No broadcast user configured for window command", { action }, true, false);
@@ -3286,7 +3318,7 @@ this._blacksmith.HookManager.registerHook({
      */
     static async _sendPlayerViewportSync(userId, position) {
         if (!userId || game.user.id !== userId) return;
-        if (!this.isEnabled()) return;
+        if (!this.isBroadcastActive()) return;
         if (!canvas?.ready) return;
         
         const mode = getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator');
