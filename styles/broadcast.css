@@ -8,11 +8,24 @@
     visibility: hidden !important;
 }
 
-/* Hide Blacksmith menubar */
-.broadcast-mode .blacksmith-menubar-container {
+/* Hide Blacksmith menubar and secondary bar when broadcast mode is active */
+.broadcast-mode .blacksmith-menubar-container,
+.broadcast-mode .blacksmith-menubar-secondary {
     display: none !important;
     visibility: hidden !important;
 }
+
+/* When "Show Combat Bar in Broadcast" is enabled, show the combat secondary bar in broadcast mode */
+.broadcast-mode.broadcast-show-combat-bar .blacksmith-menubar-secondary[data-bar-type="combat"] {
+    display: flex !important;
+    visibility: visible !important;
+    top: 0px;
+}
+
+.broadcast-mode.broadcast-show-combat-bar .combatbar-button[data-control="toggleTracker"] {
+    display: none;
+}
+
 
 /* Hide Squire tray */
 .broadcast-mode .squire-tray {

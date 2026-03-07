@@ -159,6 +159,17 @@ export function registerSettings() {
         group: WORKFLOW_GROUP
     });
 
+    game.settings.register(MODULE.ID, 'broadcastShowCombatBar', {
+        name: MODULE.ID + '.broadcastShowCombatBar-Label',
+        hint: MODULE.ID + '.broadcastShowCombatBar-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: Boolean,
+        default: true,
+        group: WORKFLOW_GROUP
+    });
+
     registerHeader('broadcastModeConfiguration', 'headingH3BroadcastModeConfiguration-Label', 'headingH3BroadcastModeConfiguration-Hint', 'H3');
 
     game.settings.register(MODULE.ID, 'broadcastMode', {

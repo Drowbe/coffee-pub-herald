@@ -4,13 +4,6 @@
 **Process:** When a task is completed, add it to **`CHANGELOG.md`**, then remove it from this file and from any completed-task language in API/architecture docs.
 
 
-#### Tune Default Zoom Levels for Broadcast Modes
-- **Issue**: Default zoom levels for broadcast modes (follow, combat, spectator) may need tuning for optimal viewing
-- **Status**: PENDING - Needs investigation and tuning
-- **Location**: `scripts/manager-herald.js`
-- **Need**: Review and adjust default zoom levels for each broadcast mode to ensure optimal framing and visibility
-
-
 #### Broadcast: Combat Spectator Mode
 - **Issue**: Add a "Combat Spectator" broadcast mode that follows all tokens in the combat tracker (not just the party)
 - **Status**: PENDING - Needs implementation
@@ -20,3 +13,38 @@
   - Use same view-fill/zoom behavior as Spectator (e.g. center on combatant token positions, zoom to fit)
   - Add mode option to broadcast mode selector and settings; optional dedicated view-fill setting (or reuse spectator/combat setting)
 - **Related**: Spectator mode (party only); Combat mode (current turn + targets). Combat Spectator = "show whole fight" framing.
+
+
+#### Change Cameraman Selector to Dropdown
+- **Issue**: Replace the current broadcast user (cameraman) selector with a dropdown for better UX
+- **Status**: PENDING - Needs implementation
+- **Location**: `scripts/settings.js`, `lang/en.json`
+- **Need**: Use a dropdown/select control for `broadcastUserId` that lists connected users (or all users) instead of free-text input
+
+
+#### Do Not Broadcast When Cameraman Not Connected
+- **Issue**: When the designated cameraman is not connected, broadcast should not be active
+- **Status**: PENDING - Needs implementation
+- **Location**: `scripts/manager-herald.js`, possibly `scripts/settings.js`
+- **Need**: Check that broadcast user is online before enabling broadcast view; disable or hide broadcast UI / mode when cameraman is disconnected
+
+
+#### Menubar Context Menu: Left-Click with Hide/Show
+- **Issue**: Change menubar context menu to left-click; add "hide/show" for what was previously left-click
+- **Status**: PENDING - Needs specification and implementation
+- **Location**: Likely Blacksmith menubar API / Herald’s menubar tool registration
+- **Need**: Clarify with Blacksmith: left-click opens context menu; previous left-click behavior becomes a "hide/show" option in that menu (or equivalent)
+
+
+#### Verify Menubar Height and Expose as Setting
+- **Issue**: Ensure broadcast/secondary bar height is set correctly; make it a setting if not already
+- **Status**: PENDING - Needs verification and possibly implementation
+- **Location**: `scripts/settings.js`, `styles/broadcast.css` or Blacksmith secondary bar config, `documentation/architecture-broadcast.md`
+- **Need**: Verify Herald (or Blacksmith) sets menubar/secondary bar height; if not configurable, add a setting for bar height
+
+
+#### Rename "Enable Broadcast" to Herald (Setting Label)
+- **Issue**: Rename the "Enable Broadcast" setting/label to "Herald" in the settings UI
+- **Status**: PENDING - Needs implementation
+- **Location**: `scripts/settings.js`, `lang/en.json`
+- **Need**: Rename "Enable Broadcast" to "Herald" (setting key can stay `enableBroadcast`). Context-menu toggle for enable/disable was added in 13.0.1.

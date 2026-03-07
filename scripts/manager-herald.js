@@ -67,12 +67,10 @@ export class HeraldManager {
         postConsoleAndNotification(MODULE.NAME, "HeraldManager: Initializing", "", true, false);
 
         if (typeof api.registerMenubarVisibilityOverride === 'function') {
-            api.registerMenubarVisibilityOverride(MODULE.ID, (user) => {
-                const isBroadcastEnabled = getSettingSafely(MODULE.ID, 'enableBroadcast', false);
-                if (!isBroadcastEnabled) return { hide: false };
-                const broadcastUserId = getSettingSafely(MODULE.ID, 'broadcastUserId', '') || '';
-                if (!matchUserBySetting(user, broadcastUserId)) return { hide: false };
-                return { hide: true };
+            api.registerMenubarVisibilityOverride(MODULE.ID, (_user) => {
+                // Never hide the menubar for the broadcast user; enable/disable only controls
+                // broadcast behavior and cameraman UI, not menubar visibility.
+                return { hide: false };
             });
         }
 
@@ -116,7 +114,9 @@ this._blacksmith.HookManager.registerHook({
                     settingKey === 'broadcastHideInterfaceLeft' ||
                     settingKey === 'broadcastHideInterfaceMiddle' ||
                     settingKey === 'broadcastHideInterfaceRight' ||
-                    settingKey === 'broadcastHideBackground'
+                    settingKey === 'broadcastHideBackground' ||
+                    settingKey === 'broadcastHideNotifications' ||
+                    settingKey === 'broadcastShowCombatBar'
                 )) {
                     this._updateBroadcastMode();
                     // Re-render menubar to update view mode button visibility
@@ -868,7 +868,7 @@ this._blacksmith.HookManager.registerHook({
         }
 
         if (!isEnabled) {
-            document.body.classList.remove('broadcast-mode', 'hide-interface-left', 'hide-interface-middle', 'hide-interface-right');
+            document.body.classList.remove('broadcast-mode', 'hide-interface-left', 'hide-interface-middle', 'hide-interface-right', 'hide-background', 'hide-notifications', 'broadcast-show-combat-bar');
             return;
         }
 
@@ -917,6 +917,13 @@ this._blacksmith.HookManager.registerHook({
                 document.body.classList.remove('hide-notifications');
             }
             
+            // Apply combat bar visibility: when true, show secondary bar when it is the combat toolbar
+            if (getSettingSafely(MODULE.ID, 'broadcastShowCombatBar', true)) {
+                document.body.classList.add('broadcast-show-combat-bar');
+            } else {
+                document.body.classList.remove('broadcast-show-combat-bar');
+            }
+            
             // Verify classes were applied
             const hasBroadcastClass = document.body.classList.contains('broadcast-mode');
             const hasLeftClass = document.body.classList.contains('hide-interface-left');
@@ -939,7 +946,7 @@ this._blacksmith.HookManager.registerHook({
                 bodyClasses: Array.from(document.body.classList)
             }, true, false);
         } else {
-            document.body.classList.remove('broadcast-mode', 'hide-interface-left', 'hide-interface-middle', 'hide-interface-right', 'hide-background', 'hide-notifications');
+            document.body.classList.remove('broadcast-mode', 'hide-interface-left', 'hide-interface-middle', 'hide-interface-right', 'hide-background', 'hide-notifications', 'broadcast-show-combat-bar');
         }
     }
 
@@ -2123,6 +2130,17 @@ this._blacksmith.HookManager.registerHook({
         return getSettingSafely(MODULE.ID, 'enableBroadcast', false) === true;
     }
 
+    /**
+     * If Herald is not enabled, show a notification and return true (caller should return).
+     * @returns {boolean} True if not enabled (notification was shown), false if enabled
+     */
+    static _warnIfNotEnabled() {
+        if (this.isEnabled()) return false;
+        const msg = game.i18n?.localize?.('coffee-pub-herald.notification-not-enabled') ?? 'Herald is not enabled.';
+        ui.notifications?.info?.(msg);
+        return true;
+    }
+
     // ==================================================================
     // ===== PLAYER VIEWPORT TRACKING ==================================
     // ==================================================================
@@ -2269,7 +2287,10 @@ this._blacksmith.HookManager.registerHook({
             name: 'broadcast-toggle',
             title: () => 'Broadcast',
             tooltip: () => 'Show broadcast controls',
-            onClick: () => api.toggleSecondaryBar('broadcast'),
+            onClick: () => {
+                if (this._warnIfNotEnabled()) return;
+                api.toggleSecondaryBar('broadcast');
+            },
             zone: 'middle',
             group: 'combat',
             groupOrder: 1,
@@ -2277,12 +2298,28 @@ this._blacksmith.HookManager.registerHook({
             moduleId: MODULE.ID,
             gmOnly: true,
             leaderOnly: false,
-            visible: () => getSettingSafely(MODULE.ID, 'enableBroadcast', false) === true,
+            visible: () => true,
             toggleable: true,
             active: false,
             iconColor: null,
             buttonNormalTint: null,
-            buttonSelectedTint: null
+            buttonSelectedTint: null,
+            contextMenuItems: () => {
+                const enabled = this.isEnabled();
+                const labelKey = enabled ? MODULE.ID + '.context-disable-herald' : MODULE.ID + '.context-enable-herald';
+                return [{
+                    name: game.i18n.localize(labelKey),
+                    icon: enabled ? 'fa-solid fa-toggle-off' : 'fa-solid fa-toggle-on',
+                    onClick: async () => {
+                        const newValue = !enabled;
+                        await game.settings.set(MODULE.ID, 'enableBroadcast', newValue);
+                        this._updateBroadcastMode();
+                        this._blacksmith.renderMenubar();
+                        await this._emitBroadcastWindowCommand('refresh', { force: true });
+                        if (this._isBroadcastUser()) window.location.reload();
+                    }
+                }];
+            }
         });
         api.registerSecondaryBarTool('broadcast', 'broadcast-toggle');
 
@@ -2300,6 +2337,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-manual', 
             visible: true,
             onClick: async () => {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Manual mode button clicked", "", true, false);
+                if (this._warnIfNotEnabled()) return;
                 // Only GMs can change broadcast mode
                 if (!game.user.isGM) {
                     postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
@@ -2326,6 +2364,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-gmview', 
             visible: true,
             onClick: async () => {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: GM View mode button clicked", "", true, false);
+                if (this._warnIfNotEnabled()) return;
                 // Only GMs can change broadcast mode
                 if (!game.user.isGM) {
                     postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
@@ -2352,6 +2391,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combat', 
             visible: true,
             onClick: async () => {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combat mode button clicked", "", true, false);
+                if (this._warnIfNotEnabled()) return;
                 // Only GMs can change broadcast mode
                 if (!game.user.isGM) {
                     postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
@@ -2378,6 +2418,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combatant
             visible: true,
             onClick: async () => {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant mode button clicked", "", true, false);
+                if (this._warnIfNotEnabled()) return;
                 // Only GMs can change broadcast mode
                 if (!game.user.isGM) {
                     postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
@@ -2404,6 +2445,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-spectator
             visible: true,
             onClick: async () => {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Spectator mode button clicked", "", true, false);
+                if (this._warnIfNotEnabled()) return;
                 // Only GMs can change broadcast mode
                 if (!game.user.isGM) {
                     postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
@@ -2430,6 +2472,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-mapview',
             visible: true,
             onClick: async () => {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Map View mode button clicked", "", true, false);
+                if (this._warnIfNotEnabled()) return;
                 if (!game.user.isGM) {
                     postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
                     return;
@@ -2449,6 +2492,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-close-ima
             visible: () => game.user.isGM,
             onClick: async () => {
                 if (!game.user.isGM) return;
+                if (this._warnIfNotEnabled()) return;
                 await this._emitBroadcastWindowCommand('close-images');
             }
         });
@@ -2463,6 +2507,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-close-jou
             visible: () => game.user.isGM,
             onClick: async () => {
                 if (!game.user.isGM) return;
+                if (this._warnIfNotEnabled()) return;
                 await this._emitBroadcastWindowCommand('close-journals');
             }
         });
@@ -2477,6 +2522,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-close-win
             visible: () => game.user.isGM,
             onClick: async () => {
                 if (!game.user.isGM) return;
+                if (this._warnIfNotEnabled()) return;
                 await this._emitBroadcastWindowCommand('close-all');
             }
         });
@@ -2491,6 +2537,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-refresh',
             visible: () => game.user.isGM,
             onClick: async () => {
                 if (!game.user.isGM) return;
+                if (this._warnIfNotEnabled()) return;
                 await this._emitBroadcastWindowCommand('refresh');
             }
         });
@@ -2505,6 +2552,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-settings'
             visible: () => game.user.isGM,
             onClick: async () => {
                 if (!game.user.isGM) return;
+                if (this._warnIfNotEnabled()) return;
                 await this._emitBroadcastWindowCommand('settings');
             }
         });
@@ -2714,21 +2762,36 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             buttonNormalTint: null,
             buttonSelectedTint: null,
             onClick: () => {
-                // Left-click: toggle the broadcast bar (Option B)
-                if (!this.isEnabled()) return;
-this._blacksmith.toggleSecondaryBar('broadcast');
+                if (this._warnIfNotEnabled()) return;
+                this._blacksmith.toggleSecondaryBar('broadcast');
             },
             contextMenuItems: (toolId, tool) => {
-                if (!game.user.isGM || !this.isEnabled()) return [];
+                const items = [];
+                const enabled = this.isEnabled();
+                const labelKey = enabled ? MODULE.ID + '.context-disable-herald' : MODULE.ID + '.context-enable-herald';
+                items.push({
+                    name: game.i18n.localize(labelKey),
+                    icon: enabled ? 'fa-solid fa-toggle-off' : 'fa-solid fa-toggle-on',
+                    onClick: async () => {
+                        const newValue = !enabled;
+                        await game.settings.set(MODULE.ID, 'enableBroadcast', newValue);
+                        this._updateBroadcastMode();
+                        this._blacksmith.renderMenubar();
+                        await this._emitBroadcastWindowCommand('refresh', { force: true });
+                        if (this._isBroadcastUser()) window.location.reload();
+                    }
+                });
+                if (!game.user.isGM || !this.isEnabled()) return items;
 
-                const items = [
-                    { name: 'Manual', icon: 'fa-solid fa-hand', onClick: async () => { await this._setBroadcastMode('manual'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-manual', true); this._blacksmith.renderMenubar(); } },
-                    { name: 'GM View', icon: 'fa-solid fa-chess-king', onClick: async () => { await this._setBroadcastMode('gmview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-gmview', true); this._blacksmith.renderMenubar(); } },
-                    { name: 'Combat', icon: 'fa-solid fa-swords', onClick: async () => { await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } },
-                    { name: 'Combatant', icon: 'fa-solid fa-people-group', onClick: async () => { await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } },
-                    { name: 'Spectator', icon: 'fa-solid fa-users', onClick: async () => { await this._setBroadcastMode('spectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-spectator', true); this._blacksmith.renderMenubar(); } },
-                    { name: 'Map View', icon: 'fa-solid fa-map', onClick: async () => { await this._setBroadcastMode('mapview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-mapview', true); this._blacksmith.renderMenubar(); } }
+                const modeItems = [
+                    { name: 'Manual', icon: 'fa-solid fa-hand', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('manual'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-manual', true); this._blacksmith.renderMenubar(); } },
+                    { name: 'GM View', icon: 'fa-solid fa-chess-king', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('gmview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-gmview', true); this._blacksmith.renderMenubar(); } },
+                    { name: 'Combat', icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } },
+                    { name: 'Combatant', icon: 'fa-solid fa-people-group', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } },
+                    { name: 'Spectator', icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-spectator', true); this._blacksmith.renderMenubar(); } },
+                    { name: 'Map View', icon: 'fa-solid fa-map', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('mapview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-mapview', true); this._blacksmith.renderMenubar(); } }
                 ];
+                items.push(...modeItems);
 
                 const mirrorUsers = this._getPartyTokensWithUsers().map(entry => entry.user).filter(Boolean);
                 for (const user of mirrorUsers) {
@@ -2737,6 +2800,7 @@ this._blacksmith.toggleSecondaryBar('broadcast');
                         name: `Mirror: ${user.name}`,
                         icon: 'fa-solid fa-helmet-battle',
                         onClick: async () => {
+                            if (this._warnIfNotEnabled()) return;
                             await this._setBroadcastMode(`playerview-${userId}`);
                             this._blacksmith.updateSecondaryBarItemActive('broadcast', `broadcast-mode-player-${userId}`, true);
                             this._blacksmith.renderMenubar();
@@ -2752,6 +2816,7 @@ this._blacksmith.toggleSecondaryBar('broadcast');
                         name: `Follow: ${label}`,
                         icon: 'fa-solid fa-location-crosshairs',
                         onClick: async () => {
+                            if (this._warnIfNotEnabled()) return;
                             await game.settings.set(MODULE.ID, 'broadcastFollowTokenId', tokenId);
                             await this._setBroadcastMode('playerview-follow');
                             this._blacksmith.updateSecondaryBarItemActive('broadcast', `broadcast-follow-token-${tokenId}`, true);
@@ -2816,6 +2881,7 @@ this._blacksmith.toggleSecondaryBar('broadcast');
                         postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
                         return;
                     }
+                    if (this._warnIfNotEnabled()) return;
                     try {
                         await this._setBroadcastMode(modeValue);
                     } catch (error) {
@@ -2873,6 +2939,7 @@ this._blacksmith.toggleSecondaryBar('broadcast');
                         postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
                         return;
                     }
+                    if (this._warnIfNotEnabled()) return;
                     await game.settings.set(MODULE.ID, 'broadcastFollowTokenId', token.id);
                     await this._setBroadcastMode('playerview-follow');
                 }
@@ -3048,16 +3115,17 @@ this._blacksmith.HookManager.registerHook({
     /**
      * Emit a broadcast window command to the cameraman client.
      * @param {string} action - Command action (close-images, close-journals, close-all, refresh)
+     * @param {{ force?: boolean }} [options] - If force is true, send even when Herald is disabled (e.g. to refresh cameraman after enable/disable)
      */
-    static async _emitBroadcastWindowCommand(action) {
+    static async _emitBroadcastWindowCommand(action, options = {}) {
         try {
-            if (!this.isEnabled()) return;
+            if (!options.force && !this.isEnabled()) return;
             const targetUserId = getSettingSafely(MODULE.ID, 'broadcastUserId', '') || '';
             if (!targetUserId) {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: No broadcast user configured for window command", { action }, true, false);
                 return;
             }
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Emitting window command", { action, targetUserId }, true, false);
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Emitting window command", { action, targetUserId, force: options.force }, true, false);
             const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
             if (!blacksmith?.sockets) return;
             await blacksmith.sockets.waitForReady();

@@ -30,6 +30,8 @@
         "broadcastHideInterfaceRight-Hint": "Hide the right UI section when in broadcast mode.",
         "broadcastHideNotifications-Label": "Hide Notifications",
         "broadcastHideNotifications-Hint": "Hide Foundry pop-up notifications when in broadcast mode.",
+        "broadcastShowCombatBar-Label": "Show Combat Bar in Broadcast",
+        "broadcastShowCombatBar-Hint": "When enabled, the cameraman view will show the Blacksmith combat secondary bar (data-bar-type=\"combat\") when in broadcast mode. Disable for a fully clean view.",
         "headingH3BroadcastModeConfiguration-Label": "Mode Configuration",
         "headingH3BroadcastModeConfiguration-Hint": "",
         "broadcastMode-Label": "Camera Mode",
@@ -39,6 +41,9 @@
         "broadcastCombatViewFill-Label": "Combat Mode View Fill (%)",
         "broadcastCombatViewFill-Hint": "Percent of the viewport the combatant box should fill.",
         "broadcastSpectatorPartyBoxFill-Label": "Spectator Mode View Fill (%)",
-        "broadcastSpectatorPartyBoxFill-Hint": "Percent of the viewport the party box should fill."
+        "broadcastSpectatorPartyBoxFill-Hint": "Percent of the viewport the party box should fill.",
+        "notification-not-enabled": "Herald is not enabled.",
+        "context-enable-herald": "Enable Herald",
+        "context-disable-herald": "Disable Herald"
     }
 }
