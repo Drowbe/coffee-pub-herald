@@ -2310,38 +2310,6 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
-     * Items for the broadcast-toggle menubar tool (Enable/Disable, Hide/Show bar). Same as former contextMenuItems.
-     * @returns {Array}
-     */
-    static _getBroadcastToggleMenuItems() {
-        const enabled = this.isEnabled();
-        const labelKey = enabled ? MODULE.ID + '.context-disable-herald' : MODULE.ID + '.context-enable-herald';
-        const hideShowLabel = game.i18n.localize(MODULE.ID + '.context-hide-show-broadcast-bar');
-        return [
-            {
-                name: game.i18n.localize(labelKey),
-                icon: enabled ? 'fa-solid fa-toggle-off' : 'fa-solid fa-toggle-on',
-                onClick: async () => {
-                    const newValue = !enabled;
-                    await game.settings.set(MODULE.ID, 'enableBroadcast', newValue);
-                    this._updateBroadcastMode();
-                    this._blacksmith.renderMenubar();
-                    await this._emitBroadcastWindowCommand('refresh', { force: true });
-                    if (this._isBroadcastUser()) window.location.reload();
-                }
-            },
-            {
-                name: hideShowLabel,
-                icon: 'fa-solid fa-bars',
-                onClick: () => {
-                    if (this._warnIfNotEnabled()) return;
-                    this._blacksmith.toggleSecondaryBar('broadcast');
-                }
-            }
-        ];
-    }
-
-    /**
      * Items for the broadcast-view-mode menubar tool. Same as former contextMenuItems.
      * @returns {Array}
      */
@@ -2434,9 +2402,10 @@ this._blacksmith.HookManager.registerHook({
             icon: 'fa-solid fa-video',
             name: 'broadcast-toggle',
             title: () => 'Broadcast',
-            tooltip: () => 'Left-click: open menu',
-            onClick: (event) => {
-                this._showBlacksmithContextMenu(event, this._getBroadcastToggleMenuItems(), 'herald-broadcast-toggle-menu');
+            tooltip: () => 'Show or hide broadcast bar',
+            onClick: () => {
+                if (this._warnIfNotEnabled()) return;
+                this._blacksmith.toggleSecondaryBar('broadcast');
             },
             zone: 'middle',
             group: 'combat',
