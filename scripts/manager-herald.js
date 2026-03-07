@@ -2286,11 +2286,8 @@ this._blacksmith.HookManager.registerHook({
             icon: 'fa-solid fa-video',
             name: 'broadcast-toggle',
             title: () => 'Broadcast',
-            tooltip: () => 'Show broadcast controls',
-            onClick: () => {
-                if (this._warnIfNotEnabled()) return;
-                api.toggleSecondaryBar('broadcast');
-            },
+            tooltip: () => 'Left-click: open menu',
+            onClick: () => {},
             zone: 'middle',
             group: 'combat',
             groupOrder: 1,
@@ -2307,18 +2304,29 @@ this._blacksmith.HookManager.registerHook({
             contextMenuItems: () => {
                 const enabled = this.isEnabled();
                 const labelKey = enabled ? MODULE.ID + '.context-disable-herald' : MODULE.ID + '.context-enable-herald';
-                return [{
-                    name: game.i18n.localize(labelKey),
-                    icon: enabled ? 'fa-solid fa-toggle-off' : 'fa-solid fa-toggle-on',
-                    onClick: async () => {
-                        const newValue = !enabled;
-                        await game.settings.set(MODULE.ID, 'enableBroadcast', newValue);
-                        this._updateBroadcastMode();
-                        this._blacksmith.renderMenubar();
-                        await this._emitBroadcastWindowCommand('refresh', { force: true });
-                        if (this._isBroadcastUser()) window.location.reload();
+                const hideShowLabel = game.i18n.localize(MODULE.ID + '.context-hide-show-broadcast-bar');
+                return [
+                    {
+                        name: game.i18n.localize(labelKey),
+                        icon: enabled ? 'fa-solid fa-toggle-off' : 'fa-solid fa-toggle-on',
+                        onClick: async () => {
+                            const newValue = !enabled;
+                            await game.settings.set(MODULE.ID, 'enableBroadcast', newValue);
+                            this._updateBroadcastMode();
+                            this._blacksmith.renderMenubar();
+                            await this._emitBroadcastWindowCommand('refresh', { force: true });
+                            if (this._isBroadcastUser()) window.location.reload();
+                        }
+                    },
+                    {
+                        name: hideShowLabel,
+                        icon: 'fa-solid fa-bars',
+                        onClick: () => {
+                            if (this._warnIfNotEnabled()) return;
+                            this._blacksmith.toggleSecondaryBar('broadcast');
+                        }
                     }
-                }];
+                ];
             }
         });
         api.registerSecondaryBarTool('broadcast', 'broadcast-toggle');
@@ -2739,10 +2747,10 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             },
             tooltip: () => {
                 if (!this.isEnabled() || !this._getBroadcastUser()) {
-                    return 'View Mode (Not Active)';
+                    return 'View Mode (Not Active) - Left-click: open menu';
                 }
                 const mode = this._getCachedBroadcastMode();
-                return `${getModeDisplayName(mode)} - Left-click: show broadcast bar; Right-click: change mode`;
+                return `${getModeDisplayName(mode)} - Left-click: open menu`;
             },
             zone: 'right',
             group: 'general',
@@ -2761,10 +2769,7 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             iconColor: null,
             buttonNormalTint: null,
             buttonSelectedTint: null,
-            onClick: () => {
-                if (this._warnIfNotEnabled()) return;
-                this._blacksmith.toggleSecondaryBar('broadcast');
-            },
+            onClick: () => {},
             contextMenuItems: (toolId, tool) => {
                 const items = [];
                 const enabled = this.isEnabled();
@@ -2779,6 +2784,14 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                         this._blacksmith.renderMenubar();
                         await this._emitBroadcastWindowCommand('refresh', { force: true });
                         if (this._isBroadcastUser()) window.location.reload();
+                    }
+                });
+                items.push({
+                    name: game.i18n.localize(MODULE.ID + '.context-hide-show-broadcast-bar'),
+                    icon: 'fa-solid fa-bars',
+                    onClick: () => {
+                        if (this._warnIfNotEnabled()) return;
+                        this._blacksmith.toggleSecondaryBar('broadcast');
                     }
                 });
                 if (!game.user.isGM || !this.isEnabled()) return items;

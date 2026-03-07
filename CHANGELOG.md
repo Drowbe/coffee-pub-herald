@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Menubar: add "Hide/Show broadcast bar" to context menu; left-click vs right-click is Blacksmith**: Herald adds "Hide/Show broadcast bar" as a context menu item on both the Broadcast toggle and View Mode tools (so the previous left-click action is in the menu). Both tools use an empty `onClick` so the only action is via the menu. **Changing the existing context menu from right-click to left-click, and making right-click do nothing, is done in Blacksmith** (menubar event binding), not in Herald.
+
 - **What Enable controls**: Enable only controls broadcast behavior and cameraman UI; it no longer hides the menubar. Menubar tools stay visible when Herald is disabled so users can turn it back on.
 - **Using tools when disabled**: Clicking any broadcast tool (toggle bar, mode buttons, close/refresh/settings) while Herald is disabled shows a notification: "Herald is not enabled."
 - **Visibility override**: Menubar is never hidden via the Blacksmith visibility override (tools always visible); hiding is done via CSS when in broadcast mode.

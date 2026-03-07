@@ -44,6 +44,7 @@
         "broadcastSpectatorPartyBoxFill-Hint": "Percent of the viewport the party box should fill.",
         "notification-not-enabled": "Herald is not enabled.",
         "context-enable-herald": "Enable Herald",
-        "context-disable-herald": "Disable Herald"
+        "context-disable-herald": "Disable Herald",
+        "context-hide-show-broadcast-bar": "Hide/Show broadcast bar"
     }
 }

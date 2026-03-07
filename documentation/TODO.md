@@ -29,13 +29,6 @@
 - **Need**: Check that broadcast user is online before enabling broadcast view; disable or hide broadcast UI / mode when cameraman is disconnected
 
 
-#### Menubar Context Menu: Left-Click with Hide/Show
-- **Issue**: Change menubar context menu to left-click; add "hide/show" for what was previously left-click
-- **Status**: PENDING - Needs specification and implementation
-- **Location**: Likely Blacksmith menubar API / Herald’s menubar tool registration
-- **Need**: Clarify with Blacksmith: left-click opens context menu; previous left-click behavior becomes a "hide/show" option in that menu (or equivalent)
-
-
 #### Verify Menubar Height and Expose as Setting
 - **Issue**: Ensure broadcast/secondary bar height is set correctly; make it a setting if not already
 - **Status**: PENDING - Needs verification and possibly implementation
