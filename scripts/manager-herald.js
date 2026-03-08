@@ -3076,7 +3076,7 @@ this._blacksmith.HookManager.registerHook({
                 const userId = mode.replace('playerview-', '');
                 const user = game.users.get(userId);
                 const name = user?.name || 'Player';
-                return `Mirror: ${name}`;
+                return name;
             }
             const modeNames = {
                 'manual': 'Manual',
