@@ -7,6 +7,8 @@
 
 **Completed (not yet in CHANGELOG):** Do Not Broadcast When Cameraman Not Connected — broadcast is only active when the designated cameraman is connected (`user.active`). Send paths (GM viewport, combat targets, mode change, window commands, player viewport) guard with `isBroadcastActive()`. View Mode tooltip shows "Cameraman disconnected" when enabled but cameraman offline. `userConnected` / `userDisconnected` hooks call `_updateBroadcastMode()` and `renderMenubar()`.
 
+**Completed (not yet in CHANGELOG):** Verify Menubar Height and Expose as Setting — Added `broadcastBarHeight` setting (default 60px, range 36–120). Height is passed to Blacksmith via `registerSecondaryBarType('broadcast', { height })` and the CSS variable `--blacksmith-menubar-secondary-broadcast-height` is set from Herald so Blacksmith's bar uses our value.
+
 
 #### Broadcast: Combat Spectator Mode
 - **Issue**: Add a "Combat Spectator" broadcast mode that follows all tokens in the combat tracker (not just the party)
@@ -25,13 +27,6 @@
 - **Status**: PENDING - Needs implementation
 - **Location**: `scripts/settings.js`, `lang/en.json`
 - **Need**: Use a dropdown/select control for `broadcastUserId` that lists connected users (or all users) instead of free-text input
-
-
-#### Verify Menubar Height and Expose as Setting
-- **Issue**: Ensure broadcast/secondary bar height is set correctly; make it a setting if not already
-- **Status**: PENDING - Needs verification and possibly implementation
-- **Location**: `scripts/settings.js`, `styles/broadcast.css` or Blacksmith secondary bar config, `documentation/architecture-broadcast.md`
-- **Need**: Verify Herald (or Blacksmith) sets menubar/secondary bar height; if not configurable, add a setting for bar height
 
 
 #### Work with Blacksmith API to Support Text on Secondary Bar

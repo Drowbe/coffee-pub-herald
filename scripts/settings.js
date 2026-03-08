@@ -170,6 +170,18 @@ export function registerSettings() {
         group: WORKFLOW_GROUP
     });
 
+    game.settings.register(MODULE.ID, 'broadcastBarHeight', {
+        name: MODULE.ID + '.broadcastBarHeight-Label',
+        hint: MODULE.ID + '.broadcastBarHeight-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: true,
+        type: Number,
+        default: 60,
+        range: { min: 36, max: 120, step: 2 },
+        group: WORKFLOW_GROUP
+    });
+
     registerHeader('broadcastModeConfiguration', 'headingH3BroadcastModeConfiguration-Label', 'headingH3BroadcastModeConfiguration-Hint', 'H3');
 
     game.settings.register(MODULE.ID, 'broadcastMode', {

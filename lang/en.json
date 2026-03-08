@@ -32,6 +32,8 @@
         "broadcastHideNotifications-Hint": "Hide Foundry pop-up notifications when in broadcast mode.",
         "broadcastShowCombatBar-Label": "Show Combat Bar in Broadcast",
         "broadcastShowCombatBar-Hint": "When enabled, the cameraman view will show the Blacksmith combat secondary bar (data-bar-type=\"combat\") when in broadcast mode. Disable for a fully clean view.",
+        "broadcastBarHeight-Label": "Broadcast Bar Height",
+        "broadcastBarHeight-Hint": "Height of the broadcast secondary bar in pixels. Blacksmith uses this via the menubar API; the CSS variable --blacksmith-menubar-secondary-broadcast-height is also set. Requires reload to apply.",
         "headingH3BroadcastModeConfiguration-Label": "Mode Configuration",
         "headingH3BroadcastModeConfiguration-Hint": "",
         "broadcastMode-Label": "Camera Mode",

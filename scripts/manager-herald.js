@@ -116,9 +116,11 @@ this._blacksmith.HookManager.registerHook({
                     settingKey === 'broadcastHideInterfaceRight' ||
                     settingKey === 'broadcastHideBackground' ||
                     settingKey === 'broadcastHideNotifications' ||
-                    settingKey === 'broadcastShowCombatBar'
+                    settingKey === 'broadcastShowCombatBar' ||
+                    settingKey === 'broadcastBarHeight'
                 )) {
                     this._updateBroadcastMode();
+                    if (settingKey === 'broadcastBarHeight') this._applyBroadcastBarHeightCss();
                     // Re-render menubar to update view mode button visibility
                     this._blacksmith.renderMenubar();
                 }
@@ -161,6 +163,7 @@ this._blacksmith.HookManager.registerHook({
             this._updateBroadcastMode();
             this._registerCameraHooks();
             await this._registerBroadcastBarType();
+            this._applyBroadcastBarHeightCss();
             this._registerBroadcastTools();
             this._blacksmith.renderMenubar();
         }, 100);
@@ -2262,12 +2265,22 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Apply broadcast bar height to the Blacksmith CSS variable so the secondary bar uses our setting.
+     * Blacksmith may use --blacksmith-menubar-secondary-broadcast-height for the broadcast bar; we set it from Herald's setting.
+     */
+    static _applyBroadcastBarHeightCss() {
+        const height = getSettingSafely(MODULE.ID, 'broadcastBarHeight', 60);
+        document.documentElement.style.setProperty('--blacksmith-menubar-secondary-broadcast-height', `${height}px`);
+    }
+
+    /**
      * Register the broadcast secondary bar type
      * @private
      */
     static async _registerBroadcastBarType() {
+        const height = getSettingSafely(MODULE.ID, 'broadcastBarHeight', 60);
         await this._blacksmith.registerSecondaryBarType('broadcast', {
-            height: 60,
+            height,
             persistence: 'manual',
             groupBannerEnabled: true,
             groupBannerColor: 'rgba(62, 92, 13, 0.9)',
@@ -2357,7 +2370,8 @@ this._blacksmith.HookManager.registerHook({
             icon: 'fa-solid fa-bars',
             onClick: () => {
                 if (this._warnIfNotEnabled()) return;
-                this._blacksmith.toggleSecondaryBar('broadcast');
+                const height = getSettingSafely(MODULE.ID, 'broadcastBarHeight', 60);
+                this._blacksmith.toggleSecondaryBar('broadcast', { height });
             }
         });
         if (!game.user.isGM || !this.isEnabled()) return items;
@@ -2428,7 +2442,8 @@ this._blacksmith.HookManager.registerHook({
             tooltip: () => 'Show or hide broadcast bar',
             onClick: () => {
                 if (this._warnIfNotEnabled()) return;
-                this._blacksmith.toggleSecondaryBar('broadcast');
+                const height = getSettingSafely(MODULE.ID, 'broadcastBarHeight', 60);
+                this._blacksmith.toggleSecondaryBar('broadcast', { height });
             },
             zone: 'middle',
             group: 'combat',
