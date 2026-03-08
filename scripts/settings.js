@@ -32,16 +32,7 @@ export function registerSettings() {
         group: WORKFLOW_GROUP
     });
 
-    game.settings.register(MODULE.ID, 'broadcastUserId', {
-        name: MODULE.ID + '.broadcastUserId-Label',
-        hint: MODULE.ID + '.broadcastUserId-Hint',
-        scope: 'world',
-        config: true,
-        requiresReload: true,
-        type: String,
-        default: '',
-        group: WORKFLOW_GROUP
-    });
+    // broadcastUserId is registered in ready (registerBroadcastUserSetting) so we have game.users for the dropdown
 
     game.settings.register(MODULE.ID, 'broadcastAnimationDuration', {
         name: MODULE.ID + '.broadcastAnimationDuration-Label',
@@ -246,6 +237,30 @@ export function registerSettings() {
         type: Number,
         default: 70,
         range: { min: 1, max: 100, step: 1 },
+        group: WORKFLOW_GROUP
+    });
+}
+
+/**
+ * Register broadcastUserId with a dropdown of users. Must be called in ready so game.users is available.
+ */
+export function registerBroadcastUserSetting() {
+    if (!game.users) return;
+    const choices = { '': game.i18n.localize(MODULE.ID + '.broadcastUserId-none') || 'None' };
+    for (const user of game.users) {
+        if (user?.id) {
+            choices[user.id] = user.name || user.id;
+        }
+    }
+    game.settings.register(MODULE.ID, 'broadcastUserId', {
+        name: MODULE.ID + '.broadcastUserId-Label',
+        hint: MODULE.ID + '.broadcastUserId-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: true,
+        type: String,
+        default: '',
+        choices,
         group: WORKFLOW_GROUP
     });
 }

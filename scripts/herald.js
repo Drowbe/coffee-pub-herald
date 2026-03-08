@@ -3,14 +3,15 @@
 // ==================================================================
 
 import { MODULE } from './const.js';
-import { registerSettings } from './settings.js';
+import { registerSettings, registerBroadcastUserSetting } from './settings.js';
 import { HeraldManager } from './manager-herald.js';
 
 Hooks.once('init', () => {
-    registerSettings();
 });
 
 Hooks.once('ready', function () {
+    registerBroadcastUserSetting();
+    registerSettings();
     let blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
     if (!blacksmith) {
         console.warn(`${MODULE.TITLE} | Blacksmith not found; skipping API registration.`);
