@@ -1322,6 +1322,15 @@ this._blacksmith.HookManager.registerHook({
      */
     static async _adjustViewportForMode(mode) {
         if (!this.isEnabled() || !canvas?.ready) return;
+
+        // Combat and combatant modes require an active combat; switch to fallback if none
+        if (mode === 'combat' || mode === 'combatant') {
+            if (!game.combat) {
+                const fallback = getSettingSafely(MODULE.ID, 'broadcastCombatEndMode', 'spectator');
+                await this._setBroadcastMode(fallback);
+                return;
+            }
+        }
         
         postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Adjusting viewport for mode change", { 
             mode,
@@ -2442,8 +2451,10 @@ this._blacksmith.HookManager.registerHook({
         const gm = [
             { name: 'Manual', icon: 'fa-solid fa-hand', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('manual'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-manual', true); this._blacksmith.renderMenubar(); } },
             { name: 'GM View', icon: 'fa-solid fa-chess-king', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('gmview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-gmview', true); this._blacksmith.renderMenubar(); } },
-            { name: 'Combat', icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } },
-            { name: 'Combatant', icon: 'fa-solid fa-people-group', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } },
+            ...(game.combat ? [
+                { name: 'Combat', icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } },
+                { name: 'Combatant', icon: 'fa-solid fa-people-group', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } }
+            ] : []),
             { name: 'Spectator', icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-spectator', true); this._blacksmith.renderMenubar(); } },
             { name: 'Map View', icon: 'fa-solid fa-map', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('mapview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-mapview', true); this._blacksmith.renderMenubar(); } }
         ];
@@ -2592,7 +2603,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-gmview', 
         });
 
 
-        // Register Combat mode button
+        // Register Combat mode button (only visible when there is an active combat)
 this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combat', {
             icon: 'fa-solid fa-swords',
             label: null,
@@ -2603,11 +2614,14 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combat', 
             iconColor: null,
             buttonColor: null,
             borderColor: null,
-            visible: true,
+            visible: () => !!game.combat,
             onClick: async () => {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combat mode button clicked", "", true, false);
                 if (this._warnIfNotEnabled()) return;
-                // Only GMs can change broadcast mode
+                if (!game.combat) {
+                    ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat. Start combat first.');
+                    return;
+                }
                 if (!game.user.isGM) {
                     postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
                     return;
@@ -2619,7 +2633,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combat', 
         });
 
         
-        // Register Combatant mode button
+        // Register Combatant mode button (only visible when there is an active combat)
 this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combatant', {
             icon: 'fa-solid fa-people-group',
             label: null,
@@ -2630,11 +2644,14 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combatant
             iconColor: null,
             buttonColor: null,
             borderColor: null,
-            visible: true,
+            visible: () => !!game.combat,
             onClick: async () => {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant mode button clicked", "", true, false);
                 if (this._warnIfNotEnabled()) return;
-                // Only GMs can change broadcast mode
+                if (!game.combat) {
+                    ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat. Start combat first.');
+                    return;
+                }
                 if (!game.user.isGM) {
                     postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
                     return;
@@ -2785,7 +2802,13 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-settings'
 
         // Set initial active state based on current broadcastMode setting
         // Switch mode will default to first item if none is set, so we set the correct one
-        const currentMode = this._getCachedBroadcastMode();
+        let currentMode = this._getCachedBroadcastMode();
+        // If mode is combat/combatant but there's no active combat, switch to fallback before showing UI
+        if ((currentMode === 'combat' || currentMode === 'combatant') && !game.combat) {
+            const fallback = getSettingSafely(MODULE.ID, 'broadcastCombatEndMode', 'spectator');
+            this._setBroadcastMode(fallback); // fire-and-forget; setting will update and sync
+            currentMode = fallback;
+        }
         const modeItemMap = {
             'spectator': 'broadcast-mode-spectator',
             'combat': 'broadcast-mode-combat',

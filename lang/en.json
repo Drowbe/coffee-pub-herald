@@ -51,6 +51,7 @@
         "broadcastCombatEndMode-Hint": "Mode to switch to when the GM clicks End Combat. No change = do not auto-switch.",
         "combatAutoSwitch-no-change": "No change",
         "notification-not-enabled": "Broadcast is not enabled.",
+        "notification-no-combat": "No active combat. Start combat first.",
         "context-enable-herald": "Enable Broadcast",
         "context-disable-herald": "Disable Broadcast",
         "context-hide-show-broadcast-bar": "Hide/Show broadcast bar",
