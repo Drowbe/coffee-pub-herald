@@ -2315,45 +2315,69 @@ this._blacksmith.HookManager.registerHook({
      * Show Blacksmith context menu (same API we use for right-click) at event position.
      * Used so the same menu opens on left-click; contextMenuItems is set to [] so right-click does nothing.
      * @param {MouseEvent} event - click event (clientX/clientY used)
-     * @param {Array<{name: string, icon?: string, onClick?: function, submenu?: Array}>} items - same shape as contextMenuItems
+     * @param {Array<{name: string, icon?: string, onClick?: function, submenu?: Array}>|Object} itemsOrZones - flat array of items, or zones object { core: [], view: [], tools: [] }
      * @param {string} menuId - unique id for the menu (e.g. 'herald-broadcast-toggle-menu')
      */
-    static _showBlacksmithContextMenu(event, items, menuId) {
+    static _showBlacksmithContextMenu(event, itemsOrZones, menuId) {
         const ContextMenu = this._blacksmith?.uiContextMenu;
-        if (!ContextMenu?.show || !items?.length) return;
-        const zones = items.map((it) => {
-            const zone = {
+        if (!ContextMenu?.show) return;
+
+        const toZoneEntry = (it) => {
+            const entry = {
                 name: it.name,
                 icon: it.icon ?? '',
                 callback: typeof it.onClick === 'function' ? it.onClick : undefined
             };
             if (it.submenu?.length) {
-                zone.submenu = it.submenu.map((sub) => ({
+                entry.submenu = it.submenu.map((sub) => ({
                     name: sub.name,
                     icon: sub.icon ?? '',
                     callback: typeof sub.onClick === 'function' ? sub.onClick : undefined
                 }));
             }
-            return zone;
-        });
-        ContextMenu.show({
-            id: menuId,
-            x: event.clientX,
-            y: event.clientY,
-            zones,
-            zoneClass: 'core'
-        });
+            return entry;
+        };
+
+        let zones;
+        if (Array.isArray(itemsOrZones)) {
+            if (!itemsOrZones.length) return;
+            zones = itemsOrZones.map(toZoneEntry);
+            ContextMenu.show({
+                id: menuId,
+                x: event.clientX,
+                y: event.clientY,
+                zones,
+                zoneClass: 'core',
+                maxWidth: 340
+            });
+        } else if (itemsOrZones && typeof itemsOrZones === 'object') {
+            const zoneObj = {};
+            for (const [key, arr] of Object.entries(itemsOrZones)) {
+                if (Array.isArray(arr) && arr.length) {
+                    zoneObj[key] = arr.map(toZoneEntry);
+                }
+            }
+            if (Object.keys(zoneObj).length === 0) return;
+            ContextMenu.show({
+                id: menuId,
+                x: event.clientX,
+                y: event.clientY,
+                zones: zoneObj,
+                maxWidth: 340
+            });
+        }
     }
 
     /**
-     * Items for the broadcast-view-mode menubar tool. Same as former contextMenuItems.
-     * @returns {Array}
+     * Items for the broadcast-view-mode menubar tool. Returns zones object for Blacksmith context menu.
+     * Uses documented zone keys: core, gm (see Blacksmith API Context Menu - zones object).
+     * @returns {Object} { core: Array, gm?: Array }
      */
     static _getViewModeMenuItems() {
-        const items = [];
+        const core = [];
         const enabled = this.isEnabled();
         const labelKey = enabled ? MODULE.ID + '.context-disable-herald' : MODULE.ID + '.context-enable-herald';
-        items.push({
+        core.push({
             name: game.i18n.localize(labelKey),
             icon: enabled ? 'fa-solid fa-toggle-off' : 'fa-solid fa-toggle-on',
             onClick: async () => {
@@ -2365,7 +2389,7 @@ this._blacksmith.HookManager.registerHook({
                 if (this._isBroadcastUser()) window.location.reload();
             }
         });
-        items.push({
+        core.push({
             name: game.i18n.localize(MODULE.ID + '.context-hide-show-broadcast-bar'),
             icon: 'fa-solid fa-bars',
             onClick: () => {
@@ -2374,9 +2398,12 @@ this._blacksmith.HookManager.registerHook({
                 this._blacksmith.toggleSecondaryBar('broadcast', { height });
             }
         });
-        if (!game.user.isGM || !this.isEnabled()) return items;
 
-        const modeItems = [
+        const zones = { core };
+        if (!game.user.isGM || !this.isEnabled()) return zones;
+
+        // GM-only zone: view modes + Tools flyout (Blacksmith API uses "gm" for this zone)
+        const gm = [
             { name: 'Manual', icon: 'fa-solid fa-hand', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('manual'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-manual', true); this._blacksmith.renderMenubar(); } },
             { name: 'GM View', icon: 'fa-solid fa-chess-king', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('gmview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-gmview', true); this._blacksmith.renderMenubar(); } },
             { name: 'Combat', icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } },
@@ -2384,12 +2411,11 @@ this._blacksmith.HookManager.registerHook({
             { name: 'Spectator', icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-spectator', true); this._blacksmith.renderMenubar(); } },
             { name: 'Map View', icon: 'fa-solid fa-map', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('mapview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-mapview', true); this._blacksmith.renderMenubar(); } }
         ];
-        items.push(...modeItems);
 
         const mirrorUsers = this._getPartyTokensWithUsers().map(entry => entry.user).filter(Boolean);
         for (const user of mirrorUsers) {
             const userId = user.id;
-            items.push({
+            gm.push({
                 name: `Mirror: ${user.name}`,
                 icon: 'fa-solid fa-helmet-battle',
                 onClick: async () => {
@@ -2418,14 +2444,28 @@ this._blacksmith.HookManager.registerHook({
             };
         });
         if (followSubmenu.length) {
-            items.push({
+            gm.push({
                 name: 'Follow',
                 icon: 'fa-solid fa-location-crosshairs',
                 submenu: followSubmenu
             });
         }
 
-        return items;
+        const toolsSubmenu = [
+            { name: game.i18n.localize(MODULE.ID + '.context-tool-close-images'), icon: 'fa-solid fa-image', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-images'); } },
+            { name: game.i18n.localize(MODULE.ID + '.context-tool-close-journals'), icon: 'fa-solid fa-book-open', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-journals'); } },
+            { name: game.i18n.localize(MODULE.ID + '.context-tool-close-all'), icon: 'fa-solid fa-circle-xmark', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-all'); } },
+            { name: game.i18n.localize(MODULE.ID + '.context-tool-refresh'), icon: 'fa-solid fa-rotate', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('refresh'); } },
+            { name: game.i18n.localize(MODULE.ID + '.context-tool-settings'), icon: 'fa-solid fa-gear', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('settings'); } }
+        ];
+        gm.push({
+            name: game.i18n.localize(MODULE.ID + '.context-tools-flyout'),
+            icon: 'fa-solid fa-wrench',
+            submenu: toolsSubmenu
+        });
+
+        zones.gm = gm;
+        return zones;
     }
 
     /**

@@ -49,6 +49,12 @@
         "context-enable-herald": "Enable Broadcast",
         "context-disable-herald": "Disable Broadcast",
         "context-hide-show-broadcast-bar": "Hide/Show broadcast bar",
+        "context-tools-flyout": "Tools",
+        "context-tool-close-images": "Close Images",
+        "context-tool-close-journals": "Close Journals",
+        "context-tool-close-all": "Close All Windows",
+        "context-tool-refresh": "Refresh",
+        "context-tool-settings": "Settings",
         "view-mode-cameraman-disconnected": "Disconnected"
     }
 }
