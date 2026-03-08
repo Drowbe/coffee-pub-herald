@@ -61,6 +61,7 @@
   "esmodules": [
     "scripts/const.js",
     "scripts/settings.js",
+    "scripts/herald-audio.js",
     "scripts/manager-herald.js",
     "scripts/herald.js"
   ],

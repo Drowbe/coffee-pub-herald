@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Broadcast bar height**: New `broadcastBarHeight` setting (default 60px, range 36–120). Height is passed to Blacksmith via `registerSecondaryBarType` and CSS variable `--blacksmith-menubar-secondary-broadcast-height`.
 - **Tools flyout in context menu**: View Mode menu has a "Tools" flyout at the end with Close Images, Close Journals, Close All Windows, Refresh, and Settings (matches broadcast bar tools).
 - **Combat mode switches**: Auto-switch broadcast mode when combat starts and ends. New settings `broadcastCombatBeginMode` and `broadcastCombatEndMode` (dropdowns: Manual, GM View, Combat, Combatant, Spectator, Map View, No change). Defaults: Combat on begin, Spectator on end. Uses `combatStart` (Begin Combat) and `deleteCombat` (End Combat) hooks.
+- **Audio unlock**: New `herald-audio.js` runs on `ready` and `canvasReady` to unlock Foundry audio without a manual canvas click. Uses OBS browser source `obsstudio.getStatus()` when available for gesture context, then `game.audio.unlock`. Enables playlists, interface sounds, and environment audio on the cameraman client.
 
 ### Changed
 

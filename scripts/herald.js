@@ -5,6 +5,7 @@
 import { MODULE } from './const.js';
 import { registerSettings, registerBroadcastUserSetting } from './settings.js';
 import { HeraldManager } from './manager-herald.js';
+import './herald-audio.js';
 
 Hooks.once('init', () => {
 });
