@@ -186,8 +186,8 @@ export function registerSettings() {
         choices: {
             'spectator': 'Party Spectator',
             'tokenspectator': 'Token Spectator',
-            'combat': 'Combat',
-            'combatant': 'Combatant',
+            'combat': game.i18n.localize(MODULE.ID + '.view-mode-combat') || 'Combat',
+            'combatant': game.i18n.localize(MODULE.ID + '.view-mode-combatant') || 'Combatant',
             'gmview': 'GM View',
             'manual': 'Manual',
             'mapview': 'Map View'
@@ -199,8 +199,8 @@ export function registerSettings() {
         'no-change': game.i18n.localize(MODULE.ID + '.combatAutoSwitch-no-change') || 'No change',
         'manual': 'Manual',
         'gmview': 'GM View',
-        'combat': 'Combat',
-        'combatant': 'Combatant',
+        'combat': game.i18n.localize(MODULE.ID + '.view-mode-combat'),
+        'combatant': game.i18n.localize(MODULE.ID + '.view-mode-combatant'),
         'tokenspectator': 'Token Spectator',
         'spectator': 'Party Spectator',
         'mapview': 'Map View'
@@ -213,7 +213,7 @@ export function registerSettings() {
         config: true,
         requiresReload: false,
         type: String,
-        default: 'combat',
+        default: 'combatant',
         choices: combatAutoSwitchChoices,
         group: WORKFLOW_GROUP
     });
@@ -229,6 +229,23 @@ export function registerSettings() {
         choices: combatAutoSwitchChoices,
         group: WORKFLOW_GROUP
     });
+
+    // One-time migration: internal names were swapped so combat = frame all, combatant = follow current.
+    game.settings.register(MODULE.ID, 'broadcastCombatCombatantMigrated', {
+        name: 'Broadcast combat/combatant names migrated',
+        scope: 'world',
+        config: false,
+        default: false,
+        type: Boolean
+    });
+    if (!game.settings.get(MODULE.ID, 'broadcastCombatCombatantMigrated')) {
+        for (const key of ['broadcastMode', 'broadcastCombatBeginMode', 'broadcastCombatEndMode']) {
+            const v = game.settings.get(MODULE.ID, key);
+            if (v === 'combat') game.settings.set(MODULE.ID, key, 'combatant');
+            else if (v === 'combatant') game.settings.set(MODULE.ID, key, 'combat');
+        }
+        game.settings.set(MODULE.ID, 'broadcastCombatCombatantMigrated', true);
+    }
 
     game.settings.register(MODULE.ID, 'broadcastFollowTokenId', {
         name: 'Broadcast Follow Token Id',

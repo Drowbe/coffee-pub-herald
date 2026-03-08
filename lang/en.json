@@ -64,6 +64,8 @@
         "context-tool-settings": "Settings",
         "view-mode-cameraman-disconnected": "Disconnected",
         "view-mode-spectator": "Party Spectator",
-        "view-mode-tokenspectator": "Token Spectator"
+        "view-mode-tokenspectator": "Token Spectator",
+        "view-mode-combat": "Combat",
+        "view-mode-combatant": "Combatant"
     }
 }

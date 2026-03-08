@@ -386,7 +386,8 @@ token.testUserVisibility(broadcastUser)
 - **Scope**: World
 - **Options**: 
   - `"spectator"` - Follow tokens with OBSERVER permission
-  - `"combat"` - Follow current combatant
+  - `"combat"` - Frame all tokens in the combat tracker
+  - `"combatant"` - Follow current combatant
   - `"custom"` - Follow selected tokens
   - `"birdseye"` - Fit map to screen
   - `"tracked"` - Copy another user's viewport

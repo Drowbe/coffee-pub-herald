@@ -196,11 +196,11 @@ this._blacksmith.HookManager.registerHook({
                     await this._onTokenUpdate(null, {});
                 }, 500);
             }
-            // Initialize combatant mode camera
-            if (mode === 'combatant') {
+            // Initialize combat mode camera (frame all combatants)
+            if (mode === 'combat') {
                 // Wait a bit for canvas to fully initialize
                 setTimeout(async () => {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Initializing camera on scene load (combatant mode)", "", true, false);
+                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Initializing camera on scene load (combat mode)", "", true, false);
                     // Trigger camera update by calling _onCombatantTokensUpdate with null changes
                     await this._onCombatantTokensUpdate(null, {});
                 }, 500);
@@ -286,7 +286,7 @@ this._blacksmith.HookManager.registerHook({
                     }
                     return;
                 }
-                if (mode === 'combat') {
+                if (mode === 'combatant') {
                     const combat = game.combat;
                     if (!combat) return;
                     const currentCombatant = combat.combatants.get(combat.current.combatantId);
@@ -296,7 +296,7 @@ this._blacksmith.HookManager.registerHook({
                     }
                     return;
                 }
-                if (mode === 'combatant') {
+                if (mode === 'combat') {
                     await this._onCombatantTokensUpdate(tokenDocument, changes);
                     return;
                 }
@@ -358,10 +358,10 @@ this._blacksmith.HookManager.registerHook({
                     }
                     return;
                 }
-                if (mode === 'combatant') {
+                if (mode === 'combat') {
                     // Wait a bit for token to be fully added to canvas, then reframe combatants
                     setTimeout(async () => {
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Processing token creation (combatant mode)", { 
+                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Processing token creation (combat mode)", { 
                             tokenId: tokenDocument?.id
                         }, true, false);
                         await this._onCombatantTokensUpdate(tokenDocument, {});
@@ -407,14 +407,14 @@ this._blacksmith.HookManager.registerHook({
                 if (!this._isBroadcastUser()) return;
                 if (!this.isEnabled()) return;
                 
-                // Check if we're in combat mode
+                // Check if we're in combat mode (frame all) or combatant mode (follow current)
                 const mode = getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator');
-                if (mode === 'combatant') {
+                if (mode === 'combat') {
                     // Reframe combatants when combat state changes
                     this._onCombatantTokensUpdate(null, {}, true);
                     return;
                 }
-                if (mode !== 'combat') return;
+                if (mode !== 'combatant') return;
                 
                 // Only process on turn change (when current turn index changes)
                 if (!updateData || updateData.turn === undefined) return;
@@ -431,7 +431,7 @@ this._blacksmith.HookManager.registerHook({
             //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
             if (!this._isBroadcastUser()) return;
             if (!this.isEnabled()) return;
-            if (getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') !== 'combatant') return;
+            if (getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') !== 'combat') return;
             await this._onCombatantTokensUpdate(null, {}, true);
             //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
         };
@@ -470,7 +470,7 @@ this._blacksmith.HookManager.registerHook({
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                 if (!user || user.id !== game.user.id) return;
                 if (!this.isEnabled()) return;
-                if (getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') !== 'combat') return;
+                if (getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') !== 'combatant') return;
                 const combat = game.combat;
                 if (!combat?.combatant) return;
 
@@ -491,7 +491,7 @@ this._blacksmith.HookManager.registerHook({
             priority: 3,
             callback: async (combat, updateData) => {
                 if (!this.isEnabled()) return;
-                const mode = getSettingSafely(MODULE.ID, 'broadcastCombatBeginMode', 'combat');
+                const mode = getSettingSafely(MODULE.ID, 'broadcastCombatBeginMode', 'combatant');
                 if (mode === 'no-change') return;
                 await this._setBroadcastMode(mode);
                 const modeItemMap = { manual: 'broadcast-mode-manual', gmview: 'broadcast-mode-gmview', combat: 'broadcast-mode-combat', combatant: 'broadcast-mode-combatant', tokenspectator: 'broadcast-mode-tokenspectator', spectator: 'broadcast-mode-spectator', mapview: 'broadcast-mode-mapview' };
@@ -704,7 +704,7 @@ this._blacksmith.HookManager.registerHook({
                     this._combatTargetIdsByUser.set(data.userId, targetSet);
 
                     if (this._isBroadcastUser()
-                        && getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') === 'combat') {
+                        && getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') === 'combatant') {
                         this._onCombatUpdate(game.combat, true);
                     }
                     //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
@@ -1425,7 +1425,7 @@ this._blacksmith.HookManager.registerHook({
                 // Immediately pan/zoom to party tokens
                 await this._onTokenUpdate(null, {});
             }
-        } else if (mode === 'combatant') {
+        } else if (mode === 'combat') {
             // Only adjust viewport for broadcast user (cameraman)
             if (this._isBroadcastUser()) {
                 // Immediately pan/zoom to combatant tokens
@@ -1440,7 +1440,7 @@ this._blacksmith.HookManager.registerHook({
             if (this._isBroadcastUser()) {
                 await this._onTokenSpectatorUpdate(null, {}, true);
             }
-        } else if (mode === 'combat') {
+        } else if (mode === 'combatant') {
             // Only adjust viewport for broadcast user (cameraman)
             if (this._isBroadcastUser()) {
                 // Immediately pan to current combatant if combat is active
@@ -1515,7 +1515,7 @@ this._blacksmith.HookManager.registerHook({
             if (!this._isBroadcastUser()) return;
             if (!this.isEnabled()) return;
             if (!canvas?.ready) return;
-            if (getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') !== 'combat') return;
+            if (getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') !== 'combatant') return;
             if (!combat) return;
             
             const currentCombatant = combat.combatants.get(combat.current.combatantId);
@@ -2559,8 +2559,8 @@ this._blacksmith.HookManager.registerHook({
             { name: 'Manual', icon: 'fa-solid fa-hand', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('manual'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-manual', true); this._blacksmith.renderMenubar(); } },
             { name: 'GM View', icon: 'fa-solid fa-chess-king', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('gmview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-gmview', true); this._blacksmith.renderMenubar(); } },
             ...(game.combat ? [
-                { name: 'Combat', icon: 'fa-solid fa-helmet-battle', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } },
-                { name: 'Combatant', icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } }
+                { name: game.i18n.localize(MODULE.ID + '.view-mode-combatant'), icon: 'fa-solid fa-helmet-battle', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } },
+                { name: game.i18n.localize(MODULE.ID + '.view-mode-combat'), icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } }
             ] : []),
             { name: game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator'), icon: 'fa-solid fa-chess', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('tokenspectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-tokenspectator', true); this._blacksmith.renderMenubar(); } },
             { name: game.i18n.localize(MODULE.ID + '.view-mode-spectator'), icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-spectator', true); this._blacksmith.renderMenubar(); } },
@@ -2718,44 +2718,14 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-gmview', 
         });
 
 
-        // Register Combat mode button (only visible when there is an active combat)
-this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combat', {
+        // Register Combatant mode button (follow current combatant; only visible when there is an active combat)
+this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combatant', {
             icon: 'fa-solid fa-helmet-battle',
             label: null,
-            tooltip: 'Combat - Follow current combatant automatically',
+            tooltip: () => (game.i18n.localize(MODULE.ID + '.view-mode-combatant') || 'Combatant') + ' - Follow current combatant automatically',
             group: 'modes',
             toggleable: false,
             order: 2,
-            iconColor: null,
-            buttonColor: null,
-            borderColor: null,
-            visible: () => !!game.combat,
-            onClick: async () => {
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combat mode button clicked", "", true, false);
-                if (this._warnIfNotEnabled()) return;
-                if (!game.combat) {
-                    ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat. Start combat first.');
-                    return;
-                }
-                if (!game.user.isGM) {
-                    postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
-                    return;
-                }
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Setting broadcast mode to 'combat'", "", true, false);
-                await this._setBroadcastMode('combat');
-                // Switch mode automatically manages active state - no manual re-rendering needed
-            }
-        });
-
-        
-        // Register Combatant mode button (only visible when there is an active combat)
-this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combatant', {
-            icon: 'fa-solid fa-swords',
-            label: null,
-            tooltip: 'Combatant - Frame all visible combatants automatically',
-            group: 'modes',
-            toggleable: false,
-            order: 3,
             iconColor: null,
             buttonColor: null,
             borderColor: null,
@@ -2773,6 +2743,36 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combatant
                 }
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Setting broadcast mode to 'combatant'", "", true, false);
                 await this._setBroadcastMode('combatant');
+                // Switch mode automatically manages active state - no manual re-rendering needed
+            }
+        });
+
+        
+        // Register Combat mode button (frame all combatants; only visible when there is an active combat)
+this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combat', {
+            icon: 'fa-solid fa-swords',
+            label: null,
+            tooltip: () => (game.i18n.localize(MODULE.ID + '.view-mode-combat') || 'Combat') + ' - Frame all visible combatants automatically',
+            group: 'modes',
+            toggleable: false,
+            order: 3,
+            iconColor: null,
+            buttonColor: null,
+            borderColor: null,
+            visible: () => !!game.combat,
+            onClick: async () => {
+                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combat mode button clicked", "", true, false);
+                if (this._warnIfNotEnabled()) return;
+                if (!game.combat) {
+                    ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat. Start combat first.');
+                    return;
+                }
+                if (!game.user.isGM) {
+                    postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
+                    return;
+                }
+                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Setting broadcast mode to 'combat'", "", true, false);
+                await this._setBroadcastMode('combat');
                 // Switch mode automatically manages active state - no manual re-rendering needed
             }
         });
@@ -3081,8 +3081,8 @@ this._blacksmith.HookManager.registerHook({
             const modeNames = {
                 'manual': 'Manual',
                 'gmview': 'GM View',
-                'combat': 'Combat',
-                'combatant': 'Combatant',
+                'combat': game.i18n.localize(MODULE.ID + '.view-mode-combat') || 'Combat',
+                'combatant': game.i18n.localize(MODULE.ID + '.view-mode-combatant') || 'Combatant',
                 'tokenspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
                 'combatspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
                 'spectator': game.i18n.localize(MODULE.ID + '.view-mode-spectator') || 'Party Spectator',
@@ -3100,8 +3100,8 @@ this._blacksmith.HookManager.registerHook({
             const modeIcons = {
                 'manual': 'fa-solid fa-hand',
                 'gmview': 'fa-solid fa-chess-king',
-                'combat': 'fa-solid fa-helmet-battle',
-                'combatant': 'fa-solid fa-swords',
+                'combat': 'fa-solid fa-swords',
+                'combatant': 'fa-solid fa-helmet-battle',
                 'tokenspectator': 'fa-solid fa-chess',
                 'combatspectator': 'fa-solid fa-chess', // backwards compat
                 'spectator': 'fa-solid fa-users',
