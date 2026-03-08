@@ -3,8 +3,6 @@
 **Master list:** This file contains all todos referenced in architecture and API documentation. 
 **Process:** When a task is completed, add it to **`CHANGELOG.md`**, then remove it from this file and from any completed-task language in API/architecture docs.
 
-**Completed in 13.0.1:** See `CHANGELOG.md` [13.0.1]. Menubar context menu (left-click, zones, Tools flyout); Cameraman dropdown; Broadcast bar height; Cameraman disconnected handling; Context menu fix (zone keys); Combat mode switches (combatStart/deleteCombat).
-
 
 #### Broadcast: Combat Spectator Mode
 - **Issue**: Add a "Combat Spectator" broadcast mode that follows all tokens in the combat tracker (not just the party)

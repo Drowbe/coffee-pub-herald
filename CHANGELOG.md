@@ -6,8 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-
-
 ## [13.0.1] - 2025-03-07
 
 ### Added
@@ -20,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tools flyout in context menu**: View Mode menu has a "Tools" flyout at the end with Close Images, Close Journals, Close All Windows, Refresh, and Settings (matches broadcast bar tools).
 - **Combat mode switches**: Auto-switch broadcast mode when combat starts and ends. New settings `broadcastCombatBeginMode` and `broadcastCombatEndMode` (dropdowns: Manual, GM View, Combat, Combatant, Spectator, Map View, No change). Defaults: Combat on begin, Spectator on end. Uses `combatStart` (Begin Combat) and `deleteCombat` (End Combat) hooks.
 - **Audio unlock**: New `herald-audio.js` runs on `ready` and `canvasReady` to unlock Foundry audio without a manual canvas click. Uses OBS browser source `obsstudio.getStatus()` when available for gesture context, then `game.audio.unlock`. Enables playlists, interface sounds, and environment audio on the cameraman client.
+- **Combat/Combatant only when in combat**: Combat and Combatant view modes are disabled when there is no active combat. Combat and Combatant bar buttons are visible only when `game.combat` exists. Context menu shows Combat/Combatant only when combat is active. If mode is combat or combatant and combat ends (or was never started), view switches to the "Switch to (Combat End)" fallback (default Spectator). New notification: "No active combat. Start combat first." (i18n: `notification-no-combat`).
+- **Mirror flyout**: Mirror options are grouped under a "Mirror" flyout in the View Mode context menu. Logged-in users with party tokens appear as submenu items under Mirror (i18n: `context-mirror-flyout`).
 
 ### Changed
 
@@ -30,11 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Using tools when disabled**: Clicking any broadcast tool (toggle bar, mode buttons, close/refresh/settings) while broadcast is disabled shows a notification: "Broadcast is not enabled."
 - **Visibility override**: Menubar is never hidden via the Blacksmith visibility override (tools always visible); hiding is done via CSS when in broadcast mode.
 - **Refresh on enable/disable**: `_emitBroadcastWindowCommand(action, options)` now accepts `options.force`. When toggling enable/disable, refresh is sent with `{ force: true }` so the cameraman always receives it and reloads.
+- **Herald audio**: Simplified; no dialog and no automatic unlock attempts. Broadcast view relies on one manual click in the browser source (e.g. OBS Interact) to enable audio. `herald-audio.js` is a stub with a short comment.
+- **Notifications hiding**: Re-enabled. When broadcast is on, the "Hide Notifications" setting again adds/removes the `hide-notifications` body class (was temporarily disabled for debug).
 
 ### Fixed
 
 - **Context menu**: Fixed zone keys to use Blacksmith's documented `core` and `gm` (was `view`/`tools`, which Blacksmith does not render). Added `maxWidth: 340` to prevent label truncation (e.g. "Hide/Show broadcast bar").
 - **Default zoom levels**: Tune default zoom levels for broadcast modes (follow, combat, spectator) — completed.
+- **Syntax error**: Removed invalid `await` in `_registerBroadcastTools()` (non-async function). Initial correction of combat/combatant mode when no combat uses fire-and-forget `_setBroadcastMode(fallback)`.
 
 ### Technical
 
