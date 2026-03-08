@@ -16,10 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Show Combat Bar in Broadcast**: New setting (default on) to show the Blacksmith combat secondary bar (`data-bar-type="combat"`) on the cameraman view when in broadcast mode; disable for a fully clean view.
 - **Menubar and secondary bar hiding**: In broadcast mode, hide `.blacksmith-menubar-container` and `.blacksmith-menubar-secondary`; combat bar is shown when "Show Combat Bar in Broadcast" is enabled.
 - **Follow flyout**: View Mode menu has a "Follow" submenu; followable tokens are listed there (labels without "Follow:" prefix).
+- **Broadcast bar height**: New `broadcastBarHeight` setting (default 60px, range 36–120). Height is passed to Blacksmith via `registerSecondaryBarType` and CSS variable `--blacksmith-menubar-secondary-broadcast-height`.
+- **Tools flyout in context menu**: View Mode menu has a "Tools" flyout at the end with Close Images, Close Journals, Close All Windows, Refresh, and Settings (matches broadcast bar tools).
 
 ### Changed
 
-- **Menubar context menu on left-click**: View Mode tool opens its menu on **left-click** via Blacksmith's context menu API (`uiContextMenu.show`). Menu includes Enable/Disable Broadcast, Hide/Show broadcast bar, modes, Mirror, and Follow (flyout). Right-click does nothing.
+- **Menubar context menu on left-click**: View Mode tool opens its menu on **left-click** via Blacksmith's context menu API (`uiContextMenu.show`). Menu uses zones (`core`, `gm`) with separators; includes Enable/Disable Broadcast, Hide/Show broadcast bar, modes, Mirror, Follow (flyout), and Tools (flyout). Right-click does nothing.
+- **Cameraman selector**: Replaced free-text input with a dropdown for `broadcastUserId`. Lists "None" and all users in the world. Setting is registered in `ready` with choices from `game.users`.
 - **Broadcast button**: No context menu. Click only toggles the broadcast secondary bar (show/hide). Enable/Disable and Hide/Show bar are available only from the View Mode menu.
 - **What Enable controls**: Enable only controls broadcast behavior and cameraman UI; it no longer hides the menubar. Menubar tools stay visible when Herald is disabled so users can turn it back on.
 - **Using tools when disabled**: Clicking any broadcast tool (toggle bar, mode buttons, close/refresh/settings) while broadcast is disabled shows a notification: "Broadcast is not enabled."
@@ -28,14 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Context menu**: Restored `mirrorUsers` declaration in view-mode context menu so Mirror/Follow items build correctly.
+- **Context menu**: Fixed zone keys to use Blacksmith's documented `core` and `gm` (was `view`/`tools`, which Blacksmith does not render). Added `maxWidth: 340` to prevent label truncation (e.g. "Hide/Show broadcast bar").
 - **Default zoom levels**: Tune default zoom levels for broadcast modes (follow, combat, spectator) — completed.
 
 ### Technical
 
 - New body class `broadcast-show-combat-bar` when setting "Show Combat Bar in Broadcast" is on; CSS shows `.blacksmith-menubar-secondary[data-bar-type="combat"]` only then.
 - Setting change hook now reacts to `broadcastHideNotifications` and `broadcastShowCombatBar` for immediate UI update.
-- View Mode menu items built by `_getViewModeMenuItems()`; shown via `_showBlacksmithContextMenu()` using Blacksmith's `uiContextMenu.show()`.
+- View Mode menu items built by `_getViewModeMenuItems()`; shown via `_showBlacksmithContextMenu()` using Blacksmith's `uiContextMenu.show()` with `maxWidth: 340`.
+- Cameraman disconnected: broadcast is only active when designated cameraman is connected (`user.active`). All send paths guard with `isBroadcastActive()`. View Mode tooltip shows "Disconnected" when enabled but cameraman offline. `userConnected`/`userDisconnected` hooks update mode and render menubar.
 
 
 ## [13.0.0] - 2025-03-03 

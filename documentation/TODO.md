@@ -3,11 +3,7 @@
 **Master list:** This file contains all todos referenced in architecture and API documentation. 
 **Process:** When a task is completed, add it to **`CHANGELOG.md`**, then remove it from this file and from any completed-task language in API/architecture docs.
 
-**Completed in 13.0.1:** Menubar context menu on left-click (View Mode only, via Blacksmith context menu API); Broadcast button as simple toggle (no menu); Follow options in a "Follow" flyout. See `CHANGELOG.md` [13.0.1].
-
-**Completed (not yet in CHANGELOG):** Do Not Broadcast When Cameraman Not Connected — broadcast is only active when the designated cameraman is connected (`user.active`). Send paths (GM viewport, combat targets, mode change, window commands, player viewport) guard with `isBroadcastActive()`. View Mode tooltip shows "Cameraman disconnected" when enabled but cameraman offline. `userConnected` / `userDisconnected` hooks call `_updateBroadcastMode()` and `renderMenubar()`.
-
-**Completed (not yet in CHANGELOG):** Verify Menubar Height and Expose as Setting — Added `broadcastBarHeight` setting (default 60px, range 36–120). Height is passed to Blacksmith via `registerSecondaryBarType('broadcast', { height })` and the CSS variable `--blacksmith-menubar-secondary-broadcast-height` is set from Herald so Blacksmith's bar uses our value.
+**Completed in 13.0.1:** See `CHANGELOG.md` [13.0.1]. Menubar context menu (left-click, zones, Tools flyout); Cameraman dropdown; Broadcast bar height; Cameraman disconnected handling; Context menu fix (zone keys).
 
 
 #### Broadcast: Combat Spectator Mode
@@ -22,11 +18,21 @@
 - **Related**: Spectator mode (party only); Combat mode (current turn + targets). Combat Spectator = "show whole fight" framing.
 
 
-#### Change Cameraman Selector to Dropdown
-- **Issue**: Replace the current broadcast user (cameraman) selector with a dropdown for better UX
+#### Select Player Tokens on Load
+- **Issue**: On cameraman client load, select all player tokens so the canvas has usual focus and sounds are broadcast.
 - **Status**: PENDING - Needs implementation
-- **Location**: `scripts/settings.js`, `lang/en.json`
-- **Need**: Use a dropdown/select control for `broadcastUserId` that lists connected users (or all users) instead of free-text input
+- **Location**: `scripts/manager-herald.js` (broadcast window / cameraman initialization)
+- **Need**: When broadcast mode activates on the cameraman client, select all player-owned tokens so Foundry treats the canvas as focused and broadcasts sounds as usual.
+
+
+#### Combat Mode Switches (Begin and End)
+- **Issue**: Automatically switch broadcast mode when combat starts and ends.
+- **Status**: PENDING - Needs implementation
+- **Location**: `scripts/manager-herald.js` (combat hooks)
+- **Need**: 
+  - On `createCombat`: Auto-switch to combat mode when combat starts (optional setting?).
+  - On `deleteCombat`: Transition from combat mode to spectator mode (or previous mode) when combat ends.
+- **Related**: `updateCombat` already handles turn changes; `createCombat`/`deleteCombat` hooks are missing. See `documentation/architecture-broadcast.md` (Combat End, Combat Mode Transition).
 
 
 #### Work with Blacksmith API to Support Text on Secondary Bar
