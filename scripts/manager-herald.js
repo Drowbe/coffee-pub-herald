@@ -1268,7 +1268,9 @@ this._blacksmith.HookManager.registerHook({
                 }, false, false);
             }
 
-            const shouldPan = forcePan ? true : (isInitialization ? true : this._shouldPan(targetPosition, combatTokens));
+            // When a combatant token moved, always reframe (same as spectator modes)
+            const tokenMoved = tokenDocument && changes && (changes.x !== undefined || changes.y !== undefined);
+            const shouldPan = forcePan ? true : (isInitialization ? true : tokenMoved || this._shouldPan(targetPosition, combatTokens));
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant should pan check", {
                 shouldPan: shouldPan,
                 targetPosition: targetPosition,
@@ -2557,10 +2559,10 @@ this._blacksmith.HookManager.registerHook({
             { name: 'Manual', icon: 'fa-solid fa-hand', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('manual'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-manual', true); this._blacksmith.renderMenubar(); } },
             { name: 'GM View', icon: 'fa-solid fa-chess-king', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('gmview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-gmview', true); this._blacksmith.renderMenubar(); } },
             ...(game.combat ? [
-                { name: 'Combat', icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } },
-                { name: 'Combatant', icon: 'fa-solid fa-people-group', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } }
+                { name: 'Combat', icon: 'fa-solid fa-helmet-battle', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } },
+                { name: 'Combatant', icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } }
             ] : []),
-            { name: game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator'), icon: 'fa-solid fa-users-rectangle', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('tokenspectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-tokenspectator', true); this._blacksmith.renderMenubar(); } },
+            { name: game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator'), icon: 'fa-solid fa-chess', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('tokenspectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-tokenspectator', true); this._blacksmith.renderMenubar(); } },
             { name: game.i18n.localize(MODULE.ID + '.view-mode-spectator'), icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-spectator', true); this._blacksmith.renderMenubar(); } },
             { name: 'Map View', icon: 'fa-solid fa-map', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('mapview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-mapview', true); this._blacksmith.renderMenubar(); } }
         ];
@@ -2718,7 +2720,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-gmview', 
 
         // Register Combat mode button (only visible when there is an active combat)
 this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combat', {
-            icon: 'fa-solid fa-swords',
+            icon: 'fa-solid fa-helmet-battle',
             label: null,
             tooltip: 'Combat - Follow current combatant automatically',
             group: 'modes',
@@ -2748,7 +2750,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combat', 
         
         // Register Combatant mode button (only visible when there is an active combat)
 this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combatant', {
-            icon: 'fa-solid fa-people-group',
+            icon: 'fa-solid fa-swords',
             label: null,
             tooltip: 'Combatant - Frame all visible combatants automatically',
             group: 'modes',
@@ -2778,7 +2780,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combatant
 
         // Register Token Spectator mode button (frame all tokens on canvas; available anytime)
 this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-tokenspectator', {
-            icon: 'fa-solid fa-users-rectangle',
+            icon: 'fa-solid fa-chess',
             label: null,
             tooltip: () => game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') + ' - Frame all tokens on the canvas',
             group: 'modes',
@@ -3098,10 +3100,10 @@ this._blacksmith.HookManager.registerHook({
             const modeIcons = {
                 'manual': 'fa-solid fa-hand',
                 'gmview': 'fa-solid fa-chess-king',
-                'combat': 'fa-solid fa-swords',
-                'combatant': 'fa-solid fa-people-group',
-                'tokenspectator': 'fa-solid fa-users-rectangle',
-                'combatspectator': 'fa-solid fa-users-rectangle', // backwards compat
+                'combat': 'fa-solid fa-helmet-battle',
+                'combatant': 'fa-solid fa-swords',
+                'tokenspectator': 'fa-solid fa-chess',
+                'combatspectator': 'fa-solid fa-chess', // backwards compat
                 'spectator': 'fa-solid fa-users',
                 'mapview': 'fa-solid fa-map',
                 'playerview': 'fa-solid fa-helmet-battle'
