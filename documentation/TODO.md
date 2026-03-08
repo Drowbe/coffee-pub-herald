@@ -1,7 +1,9 @@
 # TODO - Active Work and Future Ideas
 
-**Master list:** This file contains all todos referenced in architecture and API documentation. 
+**Master list:** This file contains all todos referenced in architecture and API documentation.
 **Process:** When a task is completed, add it to **`CHANGELOG.md`**, then remove it from this file and from any completed-task language in API/architecture docs.
+
+**Current release:** See **CHANGELOG.md** [13.0.1] for Token Spectator, Party Spectator rename, Combat/Combatant name alignment, Mirror display name, and related changes.
 
 
 #### Canvas Ambient Sound for Herald Client *(low priority)*

@@ -6,16 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
-
-### Added
-
-- **Token Spectator mode**: New broadcast mode "Token Spectator" that frames **all tokens on the canvas** (party, NPCs, and any other tokens visible to the broadcast user). Use case: frame party and monsters when **out of combat**. Uses the same view-fill setting as Party Spectator (`broadcastSpectatorPartyBoxFill`). Available anytime (not combat-only); bar button and context menu always show. Replaces the earlier "Combat Spectator" which only framed combat-tracker tokens.
-
-### Changed
-
-- **Spectator renamed to Party Spectator**: The former "Spectator" mode is now labeled "Party Spectator" everywhere (settings, bar tooltip, context menu, View Mode tooltip). It follows party tokens only. **Combatant** mode (combat-only) frames all tokens in the combat tracker. **Token Spectator** (new) frames all tokens on the canvas and works out of combat.
-- **Party / Token Spectator view fill**: Setting label updated to "Party / Token Spectator View Fill (%)" (used by both Party Spectator and Token Spectator); hint clarifies it applies to both modes.
 
 
 ## [13.0.1] - 2025-03-07
@@ -28,10 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Follow flyout**: View Mode menu has a "Follow" submenu; followable tokens are listed there (labels without "Follow:" prefix).
 - **Broadcast bar height**: New `broadcastBarHeight` setting (default 60px, range 36–120). Height is passed to Blacksmith via `registerSecondaryBarType` and CSS variable `--blacksmith-menubar-secondary-broadcast-height`.
 - **Tools flyout in context menu**: View Mode menu has a "Tools" flyout at the end with Close Images, Close Journals, Close All Windows, Refresh, and Settings (matches broadcast bar tools).
-- **Combat mode switches**: Auto-switch broadcast mode when combat starts and ends. New settings `broadcastCombatBeginMode` and `broadcastCombatEndMode` (dropdowns: Manual, GM View, Combat, Combatant, Spectator, Map View, No change). Defaults: Combat on begin, Spectator on end. Uses `combatStart` (Begin Combat) and `deleteCombat` (End Combat) hooks.
+- **Combat mode switches**: Auto-switch broadcast mode when combat starts and ends. New settings `broadcastCombatBeginMode` and `broadcastCombatEndMode` (dropdowns: Manual, GM View, Combat, Combatant, Spectator, Map View, No change). Defaults: Combatant on begin, Spectator on end. Uses `combatStart` (Begin Combat) and `deleteCombat` (End Combat) hooks.
 - **Audio unlock**: New `herald-audio.js` runs on `ready` and `canvasReady` to unlock Foundry audio without a manual canvas click. Uses OBS browser source `obsstudio.getStatus()` when available for gesture context, then `game.audio.unlock`. Enables playlists, interface sounds, and environment audio on the cameraman client.
 - **Combat/Combatant only when in combat**: Combat and Combatant view modes are disabled when there is no active combat. Combat and Combatant bar buttons are visible only when `game.combat` exists. Context menu shows Combat/Combatant only when combat is active. If mode is combat or combatant and combat ends (or was never started), view switches to the "Switch to (Combat End)" fallback (default Spectator). New notification: "No active combat. Start combat first." (i18n: `notification-no-combat`).
 - **Mirror flyout**: Mirror options are grouped under a "Mirror" flyout in the View Mode context menu. Logged-in users with party tokens appear as submenu items under Mirror (i18n: `context-mirror-flyout`).
+- **Token Spectator mode**: New broadcast mode "Token Spectator" that frames **all tokens on the canvas** (party, NPCs, and any other tokens visible to the broadcast user). Use case: frame party and monsters when **out of combat**. Uses the same view-fill setting as Party Spectator (`broadcastSpectatorPartyBoxFill`). Available anytime (not combat-only); bar button and context menu always show. Replaces the earlier "Combat Spectator" which only framed combat-tracker tokens.
 
 ### Changed
 
@@ -44,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Refresh on enable/disable**: `_emitBroadcastWindowCommand(action, options)` now accepts `options.force`. When toggling enable/disable, refresh is sent with `{ force: true }` so the cameraman always receives it and reloads.
 - **Herald audio**: Simplified; no dialog and no automatic unlock attempts. Broadcast view relies on one manual click in the browser source (e.g. OBS Interact) to enable audio. `herald-audio.js` is a stub with a short comment.
 - **Notifications hiding**: Re-enabled. When broadcast is on, the "Hide Notifications" setting again adds/removes the `hide-notifications` body class (was temporarily disabled for debug).
+- **Spectator renamed to Party Spectator**: The former "Spectator" mode is now labeled "Party Spectator" everywhere (settings, bar tooltip, context menu, View Mode tooltip). It follows party tokens only. **Combat** mode (combat-only) frames all tokens in the combat tracker. **Combatant** mode follows the current combatant. **Token Spectator** frames all tokens on the canvas and works out of combat.
+- **Party / Token Spectator view fill**: Setting label updated to "Party / Token Spectator View Fill (%)" (used by both Party Spectator and Token Spectator); hint clarifies it applies to both modes.
+- **Combat vs Combatant names aligned**: Internal mode IDs now match display names: **Combat** (`combat`) = frame all tokens in the combat tracker; **Combatant** (`combatant`) = follow current combatant. Bar order: Combatant (helmet icon) first, Combat (swords icon) second. Icons: Token Spectator = chess, Combat = helmet-battle, Combatant = swords. One-time migration renames saved `broadcastMode` / `broadcastCombatBeginMode` / `broadcastCombatEndMode` so existing worlds keep the same behavior; default for "Switch to (Combat Begin)" is now Combatant.
+- **Mirror view display name**: When mirroring a player's view, the View Mode tooltip and display name show only the player's name (e.g. "Alice"); the "Mirror:" prefix is no longer appended.
 
 ### Fixed
 
