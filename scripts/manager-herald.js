@@ -467,6 +467,42 @@ this._blacksmith.HookManager.registerHook({
             }
         });
 
+        // Hook for combat begin (when GM clicks Begin Combat)
+this._blacksmith.HookManager.registerHook({
+            name: 'combatStart',
+            description: 'BroadcastManager: Auto-switch mode when combat starts',
+            context: 'broadcast-camera',
+            priority: 3,
+            callback: async (combat, updateData) => {
+                if (!this.isEnabled()) return;
+                const mode = getSettingSafely(MODULE.ID, 'broadcastCombatBeginMode', 'combat');
+                if (mode === 'no-change') return;
+                await this._setBroadcastMode(mode);
+                const modeItemMap = { manual: 'broadcast-mode-manual', gmview: 'broadcast-mode-gmview', combat: 'broadcast-mode-combat', combatant: 'broadcast-mode-combatant', spectator: 'broadcast-mode-spectator', mapview: 'broadcast-mode-mapview' };
+                const activeItemId = modeItemMap[mode] || 'broadcast-mode-spectator';
+                this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
+                this._blacksmith.renderMenubar();
+            }
+        });
+
+        // Hook for combat end (when GM clicks End Combat)
+this._blacksmith.HookManager.registerHook({
+            name: 'deleteCombat',
+            description: 'BroadcastManager: Auto-switch mode when combat ends',
+            context: 'broadcast-camera',
+            priority: 3,
+            callback: async (combat, options, userId) => {
+                if (!this.isEnabled()) return;
+                const mode = getSettingSafely(MODULE.ID, 'broadcastCombatEndMode', 'spectator');
+                if (mode === 'no-change') return;
+                await this._setBroadcastMode(mode);
+                const modeItemMap = { manual: 'broadcast-mode-manual', gmview: 'broadcast-mode-gmview', combat: 'broadcast-mode-combat', combatant: 'broadcast-mode-combatant', spectator: 'broadcast-mode-spectator', mapview: 'broadcast-mode-mapview' };
+                const activeItemId = modeItemMap[mode] || 'broadcast-mode-spectator';
+                this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
+                this._blacksmith.renderMenubar();
+            }
+        });
+
         // Register GM view syncing (only if broadcast is enabled and mode is gmview)
         this._registerGMViewSync();
         

@@ -3,7 +3,7 @@
 **Master list:** This file contains all todos referenced in architecture and API documentation. 
 **Process:** When a task is completed, add it to **`CHANGELOG.md`**, then remove it from this file and from any completed-task language in API/architecture docs.
 
-**Completed in 13.0.1:** See `CHANGELOG.md` [13.0.1]. Menubar context menu (left-click, zones, Tools flyout); Cameraman dropdown; Broadcast bar height; Cameraman disconnected handling; Context menu fix (zone keys).
+**Completed in 13.0.1:** See `CHANGELOG.md` [13.0.1]. Menubar context menu (left-click, zones, Tools flyout); Cameraman dropdown; Broadcast bar height; Cameraman disconnected handling; Context menu fix (zone keys); Combat mode switches (combatStart/deleteCombat).
 
 
 #### Broadcast: Combat Spectator Mode
@@ -26,14 +26,6 @@
 - **Avoid**: Heavy custom ambient manager, polling, or reproducing Foundry’s attenuation. Goal: one wrapper, one listener-point resolver, one refresh path (~30–50 lines once the hook is found).
 
 
-#### Combat Mode Switches (Begin and End)
-- **Issue**: Automatically switch broadcast mode when combat starts and ends.
-- **Status**: PENDING - Needs implementation
-- **Location**: `scripts/manager-herald.js` (combat hooks)
-- **Need**: 
-  - On `createCombat`: Auto-switch to combat mode when combat starts (optional setting?).
-  - On `deleteCombat`: Transition from combat mode to spectator mode (or previous mode) when combat ends.
-- **Related**: `updateCombat` already handles turn changes; `createCombat`/`deleteCombat` hooks are missing. See `documentation/architecture-broadcast.md` (Combat End, Combat Mode Transition).
 
 
 #### Work with Blacksmith API to Support Text on Secondary Bar

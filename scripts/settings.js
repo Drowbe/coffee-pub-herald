@@ -194,6 +194,40 @@ export function registerSettings() {
         group: WORKFLOW_GROUP
     });
 
+    const combatAutoSwitchChoices = {
+        'no-change': game.i18n.localize(MODULE.ID + '.combatAutoSwitch-no-change') || 'No change',
+        'manual': 'Manual',
+        'gmview': 'GM View',
+        'combat': 'Combat',
+        'combatant': 'Combatant',
+        'spectator': 'Spectator',
+        'mapview': 'Map View'
+    };
+
+    game.settings.register(MODULE.ID, 'broadcastCombatBeginMode', {
+        name: MODULE.ID + '.broadcastCombatBeginMode-Label',
+        hint: MODULE.ID + '.broadcastCombatBeginMode-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: String,
+        default: 'combat',
+        choices: combatAutoSwitchChoices,
+        group: WORKFLOW_GROUP
+    });
+
+    game.settings.register(MODULE.ID, 'broadcastCombatEndMode', {
+        name: MODULE.ID + '.broadcastCombatEndMode-Label',
+        hint: MODULE.ID + '.broadcastCombatEndMode-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: String,
+        default: 'spectator',
+        choices: combatAutoSwitchChoices,
+        group: WORKFLOW_GROUP
+    });
+
     game.settings.register(MODULE.ID, 'broadcastFollowTokenId', {
         name: 'Broadcast Follow Token Id',
         hint: 'Internal setting for Player View follow mode',
