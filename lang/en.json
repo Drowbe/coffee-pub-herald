@@ -43,8 +43,8 @@
         "broadcastFollowViewFill-Hint": "Percent of the viewport the follow box should fill.",
         "broadcastCombatViewFill-Label": "Combat Mode View Fill (%)",
         "broadcastCombatViewFill-Hint": "Percent of the viewport the combatant box should fill.",
-        "broadcastSpectatorPartyBoxFill-Label": "Spectator Mode View Fill (%)",
-        "broadcastSpectatorPartyBoxFill-Hint": "Percent of the viewport the party box should fill.",
+        "broadcastSpectatorPartyBoxFill-Label": "Party / Token Spectator View Fill (%)",
+        "broadcastSpectatorPartyBoxFill-Hint": "Percent of the viewport the framed box should fill for Party Spectator and Token Spectator modes.",
         "broadcastCombatBeginMode-Label": "Switch to (Combat Begin)",
         "broadcastCombatBeginMode-Hint": "Mode to switch to when the GM clicks Begin Combat. No change = do not auto-switch.",
         "broadcastCombatEndMode-Label": "Switch to (Combat End)",
@@ -62,6 +62,8 @@
         "context-tool-close-all": "Close All Windows",
         "context-tool-refresh": "Refresh",
         "context-tool-settings": "Settings",
-        "view-mode-cameraman-disconnected": "Disconnected"
+        "view-mode-cameraman-disconnected": "Disconnected",
+        "view-mode-spectator": "Party Spectator",
+        "view-mode-tokenspectator": "Token Spectator"
     }
 }

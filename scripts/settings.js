@@ -184,7 +184,8 @@ export function registerSettings() {
         type: String,
         default: 'spectator',
         choices: {
-            'spectator': 'Spectator',
+            'spectator': 'Party Spectator',
+            'tokenspectator': 'Token Spectator',
             'combat': 'Combat',
             'combatant': 'Combatant',
             'gmview': 'GM View',
@@ -200,7 +201,8 @@ export function registerSettings() {
         'gmview': 'GM View',
         'combat': 'Combat',
         'combatant': 'Combatant',
-        'spectator': 'Spectator',
+        'tokenspectator': 'Token Spectator',
+        'spectator': 'Party Spectator',
         'mapview': 'Map View'
     };
 

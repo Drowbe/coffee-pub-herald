@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+
+- **Token Spectator mode**: New broadcast mode "Token Spectator" that frames **all tokens on the canvas** (party, NPCs, and any other tokens visible to the broadcast user). Use case: frame party and monsters when **out of combat**. Uses the same view-fill setting as Party Spectator (`broadcastSpectatorPartyBoxFill`). Available anytime (not combat-only); bar button and context menu always show. Replaces the earlier "Combat Spectator" which only framed combat-tracker tokens.
+
+### Changed
+
+- **Spectator renamed to Party Spectator**: The former "Spectator" mode is now labeled "Party Spectator" everywhere (settings, bar tooltip, context menu, View Mode tooltip). It follows party tokens only. **Combatant** mode (combat-only) frames all tokens in the combat tracker. **Token Spectator** (new) frames all tokens on the canvas and works out of combat.
+- **Party / Token Spectator view fill**: Setting label updated to "Party / Token Spectator View Fill (%)" (used by both Party Spectator and Token Spectator); hint clarifies it applies to both modes.
+
+
 ## [13.0.1] - 2025-03-07
 
 ### Added

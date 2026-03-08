@@ -4,18 +4,6 @@
 **Process:** When a task is completed, add it to **`CHANGELOG.md`**, then remove it from this file and from any completed-task language in API/architecture docs.
 
 
-#### Broadcast: Combat Spectator Mode
-- **Issue**: Add a "Combat Spectator" broadcast mode that follows all tokens in the combat tracker (not just the party)
-- **Status**: PENDING - Needs implementation
-- **Location**: `scripts/manager-herald.js`, `scripts/settings.js`
-- **Need**: 
-  - rename the existing "Specataor mode" to "Party Spectator" mode
-  - New broadcast mode similar to Spectator, but frame/follow all combatant tokens (party + NPCs/enemies) instead of only party tokens
-  - Use same view-fill/zoom behavior as Spectator (e.g. center on combatant token positions, zoom to fit)
-  - Add mode option to broadcast mode selector and settings; optional dedicated view-fill setting (or reuse spectator/combat setting)
-- **Related**: Spectator mode (party only); Combat mode (current turn + targets). Combat Spectator = "show whole fight" framing.
-
-
 #### Canvas Ambient Sound for Herald Client *(low priority)*
 - **Issue**: On the cameraman client, no canvas-embedded (ambient) sounds play because Foundry uses controlled-token positions as the listener; the broadcast user typically has no controlled tokens.
 - **Status**: PENDING - Needs implementation

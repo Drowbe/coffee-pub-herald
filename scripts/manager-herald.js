@@ -205,6 +205,12 @@ this._blacksmith.HookManager.registerHook({
                     await this._onCombatantTokensUpdate(null, {});
                 }, 500);
             }
+            // Initialize combat spectator mode camera (frame all combatants)
+            if (mode === 'tokenspectator') {
+                setTimeout(async () => {
+                    await this._onTokenSpectatorUpdate(null, {}, true);
+                }, 500);
+            }
             // For gmview mode, the GM client will send initial sync via socket
             // The cameraman client just needs to wait for the socket message
         };
@@ -271,7 +277,7 @@ this._blacksmith.HookManager.registerHook({
                     return;
                 }
                 
-                // Check if we're in spectator, follow, or combat mode
+                // Check if we're in spectator, combat spectator, follow, or combat mode
                 const mode = getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator');
                 if (mode === 'playerview-follow') {
                     const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
@@ -292,6 +298,10 @@ this._blacksmith.HookManager.registerHook({
                 }
                 if (mode === 'combatant') {
                     await this._onCombatantTokensUpdate(tokenDocument, changes);
+                    return;
+                }
+                if (mode === 'tokenspectator') {
+                    await this._onTokenSpectatorUpdate(tokenDocument, changes);
                     return;
                 }
                 if (mode !== 'spectator') {
@@ -355,6 +365,12 @@ this._blacksmith.HookManager.registerHook({
                             tokenId: tokenDocument?.id
                         }, true, false);
                         await this._onCombatantTokensUpdate(tokenDocument, {});
+                    }, 100);
+                    return;
+                }
+                if (mode === 'tokenspectator') {
+                    setTimeout(async () => {
+                        await this._onTokenSpectatorUpdate(tokenDocument, {});
                     }, 100);
                     return;
                 }
@@ -478,7 +494,7 @@ this._blacksmith.HookManager.registerHook({
                 const mode = getSettingSafely(MODULE.ID, 'broadcastCombatBeginMode', 'combat');
                 if (mode === 'no-change') return;
                 await this._setBroadcastMode(mode);
-                const modeItemMap = { manual: 'broadcast-mode-manual', gmview: 'broadcast-mode-gmview', combat: 'broadcast-mode-combat', combatant: 'broadcast-mode-combatant', spectator: 'broadcast-mode-spectator', mapview: 'broadcast-mode-mapview' };
+                const modeItemMap = { manual: 'broadcast-mode-manual', gmview: 'broadcast-mode-gmview', combat: 'broadcast-mode-combat', combatant: 'broadcast-mode-combatant', tokenspectator: 'broadcast-mode-tokenspectator', spectator: 'broadcast-mode-spectator', mapview: 'broadcast-mode-mapview' };
                 const activeItemId = modeItemMap[mode] || 'broadcast-mode-spectator';
                 this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
                 this._blacksmith.renderMenubar();
@@ -496,7 +512,7 @@ this._blacksmith.HookManager.registerHook({
                 const mode = getSettingSafely(MODULE.ID, 'broadcastCombatEndMode', 'spectator');
                 if (mode === 'no-change') return;
                 await this._setBroadcastMode(mode);
-                const modeItemMap = { manual: 'broadcast-mode-manual', gmview: 'broadcast-mode-gmview', combat: 'broadcast-mode-combat', combatant: 'broadcast-mode-combatant', spectator: 'broadcast-mode-spectator', mapview: 'broadcast-mode-mapview' };
+                const modeItemMap = { manual: 'broadcast-mode-manual', gmview: 'broadcast-mode-gmview', combat: 'broadcast-mode-combat', combatant: 'broadcast-mode-combatant', tokenspectator: 'broadcast-mode-tokenspectator', spectator: 'broadcast-mode-spectator', mapview: 'broadcast-mode-mapview' };
                 const activeItemId = modeItemMap[mode] || 'broadcast-mode-spectator';
                 this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
                 this._blacksmith.renderMenubar();
@@ -1086,10 +1102,13 @@ this._blacksmith.HookManager.registerHook({
                 }, false, false);
             }
             
+            // When a token in the group moved, always reframe (don't gate by distance/throttle)
+            const tokenMoved = tokenDocument && changes && (changes.x !== undefined || changes.y !== undefined);
+            
             // Pan gating (existing logic: distance threshold + throttle)
-            // Skip gating for initialization (scene load) - always pan/zoom
+            // Skip gating for initialization (scene load) or when a token moved - always pan/zoom
             // Pass partyTokens to check if any are off-screen (forces pan)
-            const shouldPan = isInitialization ? true : this._shouldPan(targetPosition, partyTokens);
+            const shouldPan = isInitialization || tokenMoved || this._shouldPan(targetPosition, partyTokens);
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Should pan check", {
                 shouldPan: shouldPan,
                 targetPosition: targetPosition,
@@ -1114,9 +1133,7 @@ this._blacksmith.HookManager.registerHook({
             if (finalZoom !== undefined) {
                 if (!Number.isFinite(finalZoom)) {
                     postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Invalid finalZoom", {
-                        finalZoom: finalZoom,
-                        zoomOffset: zoomOffset,
-                        defaultZoom: defaultZoom
+                        finalZoom: finalZoom
                     }, false, false);
                     return;
                 }
@@ -1317,6 +1334,68 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Handle token spectator updates (Token Spectator mode) – frame all tokens on the canvas.
+     * @param {TokenDocument} tokenDocument - The token document that was updated (or null for init)
+     * @param {Object} changes - The changes made to the token
+     * @param {boolean} forcePan - Force pan/zoom regardless of thresholds
+     */
+    static async _onTokenSpectatorUpdate(tokenDocument, changes, forcePan = false) {
+        try {
+            const isInitialization = !tokenDocument;
+            let allTokens = this._getAllVisibleCanvasTokens();
+
+            if (!allTokens || allTokens.length === 0) return;
+
+            if (tokenDocument && changes && (changes.x !== undefined || changes.y !== undefined)) {
+                allTokens = allTokens.map((token) => {
+                    if (token.id === tokenDocument.id) {
+                        return Object.assign({}, token, {
+                            x: changes.x !== undefined ? changes.x : token.x,
+                            y: changes.y !== undefined ? changes.y : token.y
+                        });
+                    }
+                    return token;
+                });
+            }
+
+            const targetPosition = allTokens.length === 1
+                ? this._getTokenCenter(allTokens[0])
+                : this._getGroupCenter(allTokens);
+            if (!targetPosition) return;
+
+            const fillPercent = getSettingSafely(MODULE.ID, 'broadcastSpectatorPartyBoxFill', 20);
+            const autoFitZoom = this._calculateAutoFitZoom(allTokens, fillPercent);
+            const finalZoom = autoFitZoom !== null ? autoFitZoom : (canvas.stage?.scale?.x ?? 1.0);
+
+            // When a token moved, always reframe; otherwise respect forcePan, init, or _shouldPan
+            const tokenMoved = tokenDocument && changes && (changes.x !== undefined || changes.y !== undefined);
+            const shouldPan = forcePan || isInitialization || tokenMoved || this._shouldPan(targetPosition, allTokens);
+            const currentZoom = canvas.stage?.scale?.x ?? 1.0;
+            const shouldZoom = Math.abs(currentZoom - finalZoom) > 0.001;
+            if (!shouldPan && !shouldZoom) return;
+
+            const min = canvas.scene?._viewPosition?.minScale ?? 0.25;
+            const max = canvas.scene?._viewPosition?.maxScale ?? 3.0;
+            const clampedZoom = Math.max(min, Math.min(max, finalZoom));
+
+            await canvas.animatePan({
+                x: targetPosition.x,
+                y: targetPosition.y,
+                scale: clampedZoom,
+                duration: getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 500),
+                easing: 'easeInOutCosine'
+            });
+
+            if (shouldPan) {
+                this._lastPanPosition = targetPosition;
+                this._lastPanTime = Date.now();
+            }
+        } catch (error) {
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Error in Token Spectator", error, false, false);
+        }
+    }
+
+    /**
      * Adjust viewport immediately when mode changes
      * @param {string} mode - The new broadcast mode
      */
@@ -1349,6 +1428,15 @@ this._blacksmith.HookManager.registerHook({
             if (this._isBroadcastUser()) {
                 // Immediately pan/zoom to combatant tokens
                 await this._onCombatantTokensUpdate(null, {}, true);
+            }
+        } else if (mode === 'tokenspectator') {
+            if (this._isBroadcastUser()) {
+                await this._onTokenSpectatorUpdate(null, {}, true);
+            }
+        } else if (mode === 'combatspectator') {
+            // Backwards compat: old Combat Spectator → same as Token Spectator
+            if (this._isBroadcastUser()) {
+                await this._onTokenSpectatorUpdate(null, {}, true);
             }
         } else if (mode === 'combat') {
             // Only adjust viewport for broadcast user (cameraman)
@@ -1611,6 +1699,23 @@ this._blacksmith.HookManager.registerHook({
         }
 
         return tokens;
+    }
+
+    /**
+     * Get all tokens on the canvas visible to the broadcast user (for Token Spectator mode).
+     * @returns {Array} Array of visible token placeables
+     */
+    static _getAllVisibleCanvasTokens() {
+        if (!canvas?.tokens?.placeables) return [];
+        const broadcastUser = this._getBroadcastUser();
+        if (!broadcastUser) return [];
+
+        return canvas.tokens.placeables.filter((token) => {
+            if (token.document?.testUserVisibility) {
+                return token.document.testUserVisibility(broadcastUser);
+            }
+            return token.visible;
+        });
     }
 
     /**
@@ -2455,7 +2560,8 @@ this._blacksmith.HookManager.registerHook({
                 { name: 'Combat', icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } },
                 { name: 'Combatant', icon: 'fa-solid fa-people-group', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } }
             ] : []),
-            { name: 'Spectator', icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-spectator', true); this._blacksmith.renderMenubar(); } },
+            { name: game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator'), icon: 'fa-solid fa-users-rectangle', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('tokenspectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-tokenspectator', true); this._blacksmith.renderMenubar(); } },
+            { name: game.i18n.localize(MODULE.ID + '.view-mode-spectator'), icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-spectator', true); this._blacksmith.renderMenubar(); } },
             { name: 'Map View', icon: 'fa-solid fa-map', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('mapview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-mapview', true); this._blacksmith.renderMenubar(); } }
         ];
 
@@ -2670,11 +2776,11 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-combatant
         });
 
 
-        // Register Spectator mode button
-this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-spectator', {
-            icon: 'fa-solid fa-users',
+        // Register Token Spectator mode button (frame all tokens on canvas; available anytime)
+this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-tokenspectator', {
+            icon: 'fa-solid fa-users-rectangle',
             label: null,
-            tooltip: 'Spectator - Follow party tokens automatically',
+            tooltip: () => game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') + ' - Frame all tokens on the canvas',
             group: 'modes',
             toggleable: false,
             order: 4,
@@ -2683,9 +2789,32 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-spectator
             borderColor: null,
             visible: true,
             onClick: async () => {
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Spectator mode button clicked", "", true, false);
+                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Token Spectator mode button clicked", "", true, false);
                 if (this._warnIfNotEnabled()) return;
-                // Only GMs can change broadcast mode
+                if (!game.user.isGM) {
+                    postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
+                    return;
+                }
+                await this._setBroadcastMode('tokenspectator');
+            }
+        });
+
+
+        // Register Spectator mode button (Party Spectator)
+this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-spectator', {
+            icon: 'fa-solid fa-users',
+            label: null,
+            tooltip: () => (game.i18n.localize(MODULE.ID + '.view-mode-spectator') || 'Party Spectator') + ' - Follow party tokens automatically',
+            group: 'modes',
+            toggleable: false,
+            order: 5,
+            iconColor: null,
+            buttonColor: null,
+            borderColor: null,
+            visible: true,
+            onClick: async () => {
+                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Party Spectator mode button clicked", "", true, false);
+                if (this._warnIfNotEnabled()) return;
                 if (!game.user.isGM) {
                     postConsoleAndNotification(MODULE.NAME, "Broadcast: Only GMs can change broadcast mode", "", false, false);
                     return;
@@ -2704,7 +2833,7 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-mode-mapview',
             tooltip: 'Map View - Fit scene to viewport (camera mode)',
             group: 'modes',
             toggleable: false,
-            order: 5,
+            order: 6,
             iconColor: null,
             buttonColor: null,
             borderColor: null,
@@ -2820,6 +2949,8 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-settings'
             'spectator': 'broadcast-mode-spectator',
             'combat': 'broadcast-mode-combat',
             'combatant': 'broadcast-mode-combatant',
+            'tokenspectator': 'broadcast-mode-tokenspectator',
+            'combatspectator': 'broadcast-mode-tokenspectator', // backwards compat: was Combat Spectator, now Token Spectator
             'gmview': 'broadcast-mode-gmview',
             'manual': 'broadcast-mode-manual',
             'mapview': 'broadcast-mode-mapview'
@@ -2877,6 +3008,8 @@ this._blacksmith.HookManager.registerHook({
                             'spectator': 'broadcast-mode-spectator',
                             'combat': 'broadcast-mode-combat',
                             'combatant': 'broadcast-mode-combatant',
+                            'tokenspectator': 'broadcast-mode-tokenspectator',
+                            'combatspectator': 'broadcast-mode-tokenspectator',
                             'gmview': 'broadcast-mode-gmview',
                             'manual': 'broadcast-mode-manual',
                             'mapview': 'broadcast-mode-mapview'
@@ -2948,7 +3081,9 @@ this._blacksmith.HookManager.registerHook({
                 'gmview': 'GM View',
                 'combat': 'Combat',
                 'combatant': 'Combatant',
-                'spectator': 'Spectator',
+                'tokenspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
+                'combatspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
+                'spectator': game.i18n.localize(MODULE.ID + '.view-mode-spectator') || 'Party Spectator',
                 'mapview': 'Map View',
                 'playerview': 'Player View'
             };
@@ -2965,6 +3100,8 @@ this._blacksmith.HookManager.registerHook({
                 'gmview': 'fa-solid fa-chess-king',
                 'combat': 'fa-solid fa-swords',
                 'combatant': 'fa-solid fa-people-group',
+                'tokenspectator': 'fa-solid fa-users-rectangle',
+                'combatspectator': 'fa-solid fa-users-rectangle', // backwards compat
                 'spectator': 'fa-solid fa-users',
                 'mapview': 'fa-solid fa-map',
                 'playerview': 'fa-solid fa-helmet-battle'
