@@ -18,11 +18,12 @@
 - **Related**: Spectator mode (party only); Combat mode (current turn + targets). Combat Spectator = "show whole fight" framing.
 
 
-#### Select Player Tokens on Load
-- **Issue**: On cameraman client load, select all player tokens so the canvas has usual focus and sounds are broadcast.
+#### Canvas Ambient Sound for Herald Client *(low priority)*
+- **Issue**: On the cameraman client, no canvas-embedded (ambient) sounds play because Foundry uses controlled-token positions as the listener; the broadcast user typically has no controlled tokens.
 - **Status**: PENDING - Needs implementation
-- **Location**: `scripts/manager-herald.js` (broadcast window / cameraman initialization)
-- **Need**: When broadcast mode activates on the cameraman client, select all player-owned tokens so Foundry treats the canvas as focused and broadcasts sounds as usual.
+- **Location**: New small module or script (e.g. herald-listener), `libWrapper` dependency
+- **Need**: Light approach: use **libWrapper** to wrap Foundry’s ambient-sound listener-resolution (e.g. in `SoundsLayer` / `AmbientSound`). On the Herald client only, substitute **one listener position** (e.g. center of one observed token—first party token, or any token we can see—no need for “leader”; Blacksmith may not expose that). Return that point so ambient sounds play; any canvas sounds are better than none.
+- **Avoid**: Heavy custom ambient manager, polling, or reproducing Foundry’s attenuation. Goal: one wrapper, one listener-point resolver, one refresh path (~30–50 lines once the hook is found).
 
 
 #### Combat Mode Switches (Begin and End)
