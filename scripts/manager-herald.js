@@ -2460,10 +2460,10 @@ this._blacksmith.HookManager.registerHook({
         ];
 
         const mirrorUsers = this._getPartyTokensWithUsers().map(entry => entry.user).filter(Boolean);
-        for (const user of mirrorUsers) {
+        const mirrorSubmenu = mirrorUsers.map((user) => {
             const userId = user.id;
-            gm.push({
-                name: `Mirror: ${user.name}`,
+            return {
+                name: user.name,
                 icon: 'fa-solid fa-helmet-battle',
                 onClick: async () => {
                     if (this._warnIfNotEnabled()) return;
@@ -2471,6 +2471,13 @@ this._blacksmith.HookManager.registerHook({
                     this._blacksmith.updateSecondaryBarItemActive('broadcast', `broadcast-mode-player-${userId}`, true);
                     this._blacksmith.renderMenubar();
                 }
+            };
+        });
+        if (mirrorSubmenu.length) {
+            gm.push({
+                name: game.i18n.localize(MODULE.ID + '.context-mirror-flyout'),
+                icon: 'fa-solid fa-helmet-battle',
+                submenu: mirrorSubmenu
             });
         }
 
