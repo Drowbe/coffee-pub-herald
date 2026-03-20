@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [13.0.2] - 2026-03-07
 
+### Changed
+
+- **Hot-path performance**: Camera follow / pan / zoom paths use `_hotPathSettings` (refreshed on init and when relevant settings change) instead of calling `game.settings.get` every `_shouldPan` / animate. `_getViewportCssSize()` caches width/height while PIXI renderer dimensions/resolution are unchanged. Fallback defaults for party/token spectator fill and combat view fill now match `settings.js` (70% and 35%) where the old code used incorrect literals.
+
 ### Fixed
 
 - **Timer lifecycle on unload**: All Herald-owned delays use `_trackedSetTimeout`; debounced timers use `_trackedClearTimeout` when rescheduled. `cleanup()` clears GM/player portrait/player-viewport debounces and remaining `_timeoutIds`; `_stopAllPlayerViewportMonitoring()` stops every user in `_playerPanHandlers` or `_playerDebounces`. See `documentation/performance.md` (Rank 2).

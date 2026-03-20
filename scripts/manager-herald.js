@@ -50,6 +50,32 @@ export class HeraldManager {
     static _socketsReadyPromise = null; // Cached Blacksmith socket readiness promise
 
     /**
+     * Settings read heavily during camera follow / pan / zoom paths.
+     * Refreshed in `initialize()` and when any listed key changes (`broadcast-settings` hook).
+     */
+    static _hotPathSettings = {
+        followDistanceThreshold: 1,
+        followThrottleMs: 100,
+        animationDuration: 500,
+        spectatorPartyBoxFill: 70,
+        combatViewFill: 35,
+        followViewFill: 20
+    };
+
+    /** `{ width, height, rkey }` — invalidated when PIXI renderer width/height/resolution change. */
+    static _viewportCssCache = null;
+
+    /** Setting keys that affect `_hotPathSettings` (must match `settings.js` defaults). */
+    static _HOT_PATH_SETTING_KEYS = new Set([
+        'broadcastFollowDistanceThreshold',
+        'broadcastFollowThrottleMs',
+        'broadcastAnimationDuration',
+        'broadcastSpectatorPartyBoxFill',
+        'broadcastCombatViewFill',
+        'broadcastFollowViewFill'
+    ]);
+
+    /**
      * Initialize the HeraldManager (called with Blacksmith API from herald.js).
      * Follows registering-with-blacksmith.md: guard on blacksmith and required methods; use sub-APIs when present.
      */
@@ -76,6 +102,7 @@ export class HeraldManager {
         }
 
         this._registerHooks();
+        this._refreshHotPathSettingsCache();
         if (api.HookManager && typeof api.HookManager.registerHook === 'function') {
             api.HookManager.registerHook({
                 name: 'unloadModule',
@@ -109,6 +136,10 @@ this._blacksmith.HookManager.registerHook({
             callback: (moduleId, settingKey, value) => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                 
+                if (moduleId === MODULE.ID && this._HOT_PATH_SETTING_KEYS.has(settingKey)) {
+                    this._refreshHotPathSettingsCache();
+                }
+
                 if (moduleId === MODULE.ID && (
                     settingKey === 'enableBroadcast' || 
                     settingKey === 'broadcastUserId' ||
@@ -884,7 +915,7 @@ this._blacksmith.HookManager.registerHook({
 
         postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Applying GM viewport", viewportState, true, false);
 
-        const duration = getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 250);
+        const duration = this._hotPathSettings.animationDuration;
 
         await canvas.animatePan({
             x: viewportState.x,
@@ -1084,7 +1115,7 @@ this._blacksmith.HookManager.registerHook({
             let finalZoom;
             
             // Use auto-fit zoom based on bounding box + padding (single or multiple tokens)
-            const fillPercent = getSettingSafely(MODULE.ID, 'broadcastSpectatorPartyBoxFill', 20);
+            const fillPercent = this._hotPathSettings.spectatorPartyBoxFill;
             const autoFitZoom = this._calculateAutoFitZoom(partyTokens, fillPercent);
             
             if (autoFitZoom !== null) {
@@ -1154,7 +1185,7 @@ this._blacksmith.HookManager.registerHook({
             // canvas.animatePan() appears to center the coordinate in the viewport automatically
             // (combat mode uses canvasToken.x/y which centers perfectly, so we use token center here)
             // Always include scale since we always calculate finalZoom now
-            const animationDuration = getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 500);
+            const animationDuration = this._hotPathSettings.animationDuration;
             const panOptions = {
                 x: targetPosition.x,
                 y: targetPosition.y,
@@ -1251,7 +1282,7 @@ this._blacksmith.HookManager.registerHook({
 
             // Calculate zoom based on bounding box + viewport fill
             let finalZoom;
-            const fillPercent = getSettingSafely(MODULE.ID, 'broadcastSpectatorPartyBoxFill', 20);
+            const fillPercent = this._hotPathSettings.spectatorPartyBoxFill;
             const autoFitZoom = this._calculateAutoFitZoom(combatTokens, fillPercent);
 
             if (autoFitZoom !== null) {
@@ -1307,7 +1338,7 @@ this._blacksmith.HookManager.registerHook({
                 }
             }
 
-            const animationDuration = getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 500);
+            const animationDuration = this._hotPathSettings.animationDuration;
             const panOptions = {
                 x: targetPosition.x,
                 y: targetPosition.y,
@@ -1365,7 +1396,7 @@ this._blacksmith.HookManager.registerHook({
                 : this._getGroupCenter(allTokens);
             if (!targetPosition) return;
 
-            const fillPercent = getSettingSafely(MODULE.ID, 'broadcastSpectatorPartyBoxFill', 20);
+            const fillPercent = this._hotPathSettings.spectatorPartyBoxFill;
             const autoFitZoom = this._calculateAutoFitZoom(allTokens, fillPercent);
             const finalZoom = autoFitZoom !== null ? autoFitZoom : (canvas.stage?.scale?.x ?? 1.0);
 
@@ -1384,7 +1415,7 @@ this._blacksmith.HookManager.registerHook({
                 x: targetPosition.x,
                 y: targetPosition.y,
                 scale: clampedZoom,
-                duration: getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 500),
+                duration: this._hotPathSettings.animationDuration,
                 easing: 'easeInOutCosine'
             });
 
@@ -1551,12 +1582,12 @@ this._blacksmith.HookManager.registerHook({
             const shouldPan = forcePan ? true : this._shouldPan(frameCenter, tokensToFrame);
             if (!shouldPan) return;
 
-            const fillPercent = getSettingSafely(MODULE.ID, 'broadcastCombatViewFill', 20);
+            const fillPercent = this._hotPathSettings.combatViewFill;
             const boxWidth = maxX - minX;
             const boxHeight = maxY - minY;
             const fillZoom = this._calculateViewportFillZoom(boxWidth, boxHeight, fillPercent);
             const finalZoom = fillZoom ?? (canvas.stage?.scale?.x ?? 1.0);
-            const duration = getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 250);
+            const duration = this._hotPathSettings.animationDuration;
 
             canvas.animatePan({
                 x: frameCenter.x,
@@ -1594,12 +1625,12 @@ this._blacksmith.HookManager.registerHook({
             const shouldPan = forcePan ? true : this._shouldPan({ x: center.x, y: center.y }, [canvasToken]);
             if (!shouldPan) return;
 
-            const fillPercent = getSettingSafely(MODULE.ID, 'broadcastFollowViewFill', 20);
+            const fillPercent = this._hotPathSettings.followViewFill;
             const followBoxGridSize = 3;
             const fixedZoom = this._calculateFixedBoxZoom(followBoxGridSize, fillPercent);
             const finalZoom = fixedZoom ?? (canvas.stage?.scale?.x ?? 1.0);
 
-            const duration = getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 250);
+            const duration = this._hotPathSettings.animationDuration;
             await canvas.animatePan({
                 x: center.x,
                 y: center.y,
@@ -1632,7 +1663,7 @@ this._blacksmith.HookManager.registerHook({
             const centerY = rect.y + (rect.height / 2);
             const scale = Math.min(viewWidth / rect.width, viewHeight / rect.height) * 0.95;
 
-            const duration = getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 250);
+            const duration = this._hotPathSettings.animationDuration;
             await canvas.animatePan({
                 x: centerX,
                 y: centerY,
@@ -2020,35 +2051,64 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Reload cached values for hot camera paths (must match `settings.js` defaults).
+     */
+    static _refreshHotPathSettingsCache() {
+        const h = this._hotPathSettings;
+        h.followDistanceThreshold = getSettingSafely(MODULE.ID, 'broadcastFollowDistanceThreshold', 1);
+        h.followThrottleMs = getSettingSafely(MODULE.ID, 'broadcastFollowThrottleMs', 100);
+        h.animationDuration = getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 500);
+        h.spectatorPartyBoxFill = getSettingSafely(MODULE.ID, 'broadcastSpectatorPartyBoxFill', 70);
+        h.combatViewFill = getSettingSafely(MODULE.ID, 'broadcastCombatViewFill', 35);
+        h.followViewFill = getSettingSafely(MODULE.ID, 'broadcastFollowViewFill', 20);
+    }
+
+    static _invalidateViewportCssCache() {
+        this._viewportCssCache = null;
+    }
+
+    /**
      * Get viewport size in CSS pixels (independent of renderer DPR).
+     * Cached while PIXI renderer dimensions/resolution are unchanged (avoids repeated `getBoundingClientRect` in one pan/zoom evaluation).
      * @returns {Object} { width, height }
      */
     static _getViewportCssSize() {
+        const renderer = canvas?.app?.renderer;
+        const rkey = renderer?.width && renderer?.height
+            ? `${renderer.width}|${renderer.height}|${renderer.resolution ?? window.devicePixelRatio ?? 1}`
+            : 'nor';
+
+        if (this._viewportCssCache?.rkey === rkey) {
+            return { width: this._viewportCssCache.width, height: this._viewportCssCache.height };
+        }
+
         try {
             const view = canvas?.app?.view;
             if (view?.getBoundingClientRect) {
                 const rect = view.getBoundingClientRect();
                 if (rect?.width && rect?.height) {
-                    return { width: rect.width, height: rect.height };
+                    const width = rect.width;
+                    const height = rect.height;
+                    this._viewportCssCache = { width, height, rkey };
+                    return { width, height };
                 }
             }
         } catch (error) {
             // Ignore and fall through to renderer/window sizing
         }
 
-        const renderer = canvas?.app?.renderer;
         if (renderer?.width && renderer?.height) {
             const resolution = renderer.resolution || window.devicePixelRatio || 1;
-            return {
-                width: renderer.width / resolution,
-                height: renderer.height / resolution
-            };
+            const width = renderer.width / resolution;
+            const height = renderer.height / resolution;
+            this._viewportCssCache = { width, height, rkey };
+            return { width, height };
         }
 
-        return {
-            width: window.innerWidth || 1920,
-            height: window.innerHeight || 1080
-        };
+        const width = window.innerWidth || 1920;
+        const height = window.innerHeight || 1080;
+        this._viewportCssCache = { width, height, rkey };
+        return { width, height };
     }
 
     /**
@@ -2111,8 +2171,7 @@ this._blacksmith.HookManager.registerHook({
      * @returns {boolean} True if should pan
      */
     static _shouldPan(newPosition, partyTokens = null) {
-        const distanceThreshold = getSettingSafely(MODULE.ID, 'broadcastFollowDistanceThreshold', 1.0);
-        const throttleMs = getSettingSafely(MODULE.ID, 'broadcastFollowThrottleMs', 100);
+        const { followDistanceThreshold: distanceThreshold, followThrottleMs: throttleMs } = this._hotPathSettings;
         
         // Check if any party tokens are off-screen or near edge - always pan in this case
         if (partyTokens && partyTokens.length > 0) {
@@ -3676,7 +3735,7 @@ this._blacksmith.HookManager.registerHook({
 
         postConsoleAndNotification(MODULE.NAME, `BroadcastManager: Applying player ${viewportState.userId} viewport`, viewportState, true, false);
 
-        const duration = getSettingSafely(MODULE.ID, 'broadcastAnimationDuration', 250);
+        const duration = this._hotPathSettings.animationDuration;
 
         await canvas.animatePan({
             x: viewportState.x,
@@ -3741,6 +3800,7 @@ this._blacksmith.HookManager.registerHook({
 
         // Reset cached socket readiness (module reload / re-enable should recreate it)
         this._socketsReadyPromise = null;
+        this._invalidateViewportCssCache();
 
         // Clear debounced timers (tracked in `_timeoutIds`); null refs so callbacks cannot run stale logic
         if (this._gmDebounce) {

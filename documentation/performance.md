@@ -15,7 +15,7 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 | 3 | High | Socket readiness overhead on frequent sync paths | Fixed |
 | 4 | Medium | Hot-path per-token debug payload allocations | Partially Fixed |
 | 5 | Medium | Menubar full rerenders on frequent update paths | Active |
-| 6 | Medium | Repeated settings lookups in hot camera paths | Active |
+| 6 | Medium | Repeated settings lookups in hot camera paths | Fixed |
 | 7 | Low | Token list/bounding box recomputation opportunities | Active |
 
 ---
@@ -95,24 +95,16 @@ This is especially costly because auto-fit zoom and bounding boxes happen during
 
 **Why this matters:** During active scenes (many tokens), any missed throttling means lots of math + garbage creation.
 
-**Recommendation:**
+**Recommendation / Status:**
 - Compute should-pan first and only compute zoom/bounding-box if needed.
-- Cache:
-  - `viewportCssSize` used by `_shouldPan()` / zoom computations
-  - `distanceThreshold` and `throttleMs` values from settings
-  - results of token center/bounding-box computations per “frame” (invalidate on token moved or on relevant setting changes).
+- **Partial:** `_getViewportCssSize()` is cached (invalidated when renderer width/height/resolution change; cleared in `cleanup()`). Hot-path settings (`distanceThreshold`, `throttleMs`, fill percents, animation duration) use `_hotPathSettings` refreshed on init and `settingChange`.
+- **Still open:** Per-frame token list / bounding-box result caching (invalidate on move, scene, combat).
 
 ---
 
 ### 3) Settings lookups on hot paths
 **Where:** `scripts/manager-herald.js`
-- `_shouldPan()` calls `getSettingSafely(...)` for `broadcastFollowDistanceThreshold` and `broadcastFollowThrottleMs` on every call.
-- Multiple camera follow methods call `getSettingSafely(...)` for fill and animation duration.
-
-**Why this matters:** `game.settings.get(...)` can be relatively expensive; doing this repeatedly during frequent `updateToken` / pan events increases CPU use.
-
-**Recommendation:**
-- Cache these setting values and refresh them via the existing `settingChange` HookManager hook.
+- **Fixed:** `_shouldPan()`, party/combatant/token-spectator follow, combat framing, follow mode, map view, GM/player viewport apply use **`_hotPathSettings`** (populated by `_refreshHotPathSettingsCache()` on init and when any of `broadcastFollowDistanceThreshold`, `broadcastFollowThrottleMs`, `broadcastAnimationDuration`, `broadcastSpectatorPartyBoxFill`, `broadcastCombatViewFill`, or `broadcastFollowViewFill` changes — see `broadcast-settings` HookManager hook).
 
 ---
 
@@ -175,7 +167,7 @@ This is especially costly because auto-fit zoom and bounding boxes happen during
 1. Add missing `disposeByContext('broadcast-windows')` in `cleanup()`. (done)
 2. Track/clear all delayed initialization `setTimeout`s via `_trackedSetTimeout`. (done)
 3. Reduce/remove per-token debug payload allocations in `_calculateTokenBoundingBox()` and related hot paths. (done)
-4. Cache settings used in hot functions (`_shouldPan`, fillPercent, animation duration, thresholds`). (not yet implemented)
-5. Cache viewport CSS size for `_shouldPan()` / zoom math (invalidate on resize / pan changes if needed).
+4. Cache settings used in hot functions (`_shouldPan`, fillPercent, animation duration, thresholds`). (done — `_hotPathSettings` + `settingChange`)
+5. Cache viewport CSS size for `_shouldPan()` / zoom math (invalidate on resize / pan changes if needed). (done — renderer-keyed cache + `cleanup()` invalidation)
 6. Cache socket readiness promise to avoid repeated `waitForReady()` calls in `canvasPan`-driven paths. (done)
 
