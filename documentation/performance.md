@@ -1,0 +1,181 @@
+# Performance / Memory Review
+
+Scope: `coffee-pub-herald` (Foundry VTT v13+) with Blacksmith API usage.
+
+This doc focuses on potential memory leaks, performance hotspots, and incomplete / risky usage patterns around Blacksmith `HookManager` and Blacksmith sockets.
+
+---
+
+## Current Findings (Stack Ranked)
+
+| Rank | Severity | Area | Status |
+| --- | --- | --- | --- |
+| 1 | High | HookManager context cleanup gaps (`broadcast-windows`) | Fixed |
+| 2 | High | Delayed timer lifecycle (`setTimeout` tracking/cleanup) | Partially Fixed |
+| 3 | High | Socket readiness overhead on frequent sync paths | Fixed |
+| 4 | Medium | Hot-path per-token debug payload allocations | Partially Fixed |
+| 5 | Medium | Menubar full rerenders on frequent update paths | Active |
+| 6 | Medium | Repeated settings lookups in hot camera paths | Active |
+| 7 | Low | Token list/bounding box recomputation opportunities | Active |
+
+---
+
+## High-Risk Memory / Lifecycle Issues
+
+### 1) `broadcast-windows` HookManager context is never disposed
+**Where:** `scripts/manager-herald.js`
+- Hooks are registered with `context: 'broadcast-windows'` in `_registerBroadcastWindowHooks()`
+- `cleanup()` calls `disposeByContext(...)` for multiple contexts, but **does not include** `'broadcast-windows'`.
+
+**Why this matters:** If the module is unloaded/disabled and re-enabled in the same browser session, those hooks can survive longer than expected and keep references alive, causing duplicated behavior and gradual memory growth.
+
+**Recommendation / Status:**
+- Add `this._blacksmith?.HookManager?.disposeByContext('broadcast-windows')` in `cleanup()` and reset `_broadcastWindowHooksRegistered` after cleanup.
+- Implemented (see `cleanup()` changes in `scripts/manager-herald.js`).
+
+---
+
+### 2) Pending `setTimeout` calls are not fully tracked/cleared
+**Where:** `scripts/manager-herald.js`
+- There are many `setTimeout(...)` calls used for initialization and follow-up work.
+- `cleanup()` clears `_timeoutIds`, but **only some timeouts are added** to `_timeoutIds`.
+- The helper `static _trackedSetTimeout(...)` exists but appears **unused**.
+
+**Why this matters:** If unload/disable occurs while timeouts are pending, those callbacks can still run after `cleanup()`, potentially re-registering hooks/tools or re-triggering socket emissions.
+
+**Recommendation / Status:**
+- Replace untracked `setTimeout` usages with `_trackedSetTimeout(...)` (or store IDs and clear them in `cleanup()`).
+- Implemented for all main delayed initialization + viewport-adjust delays (using `_trackedSetTimeout`), while leaving short-lived debounces that are already cleared (e.g. `_gmDebounce`, `_playerButtonsDebounce`).
+
+---
+
+### 3) Socket handler cleanup is not explicit (may be fine, but currently undocumented here)
+**Where:** `scripts/manager-herald.js`
+- Socket handlers are registered via `blacksmith.sockets.register(...)`.
+- `cleanup()` clears `_socketHandlerNames`, but explicitly notes that internal socket handler cleanup isn’t accessible.
+
+**Why this matters:** If Blacksmith does not automatically unregister handlers on module unload (or if unload doesn’t trigger full teardown), handlers could accumulate.
+
+**Recommendation:**
+- Confirm Blacksmith’s socket lifecycle behavior on module unload.
+- If the socket API provides an unregister/return value (or a dispose-by-context equivalent), adopt it.
+- Otherwise, add a short comment in code/doc clarifying that Blacksmith auto-cleans handlers on unload.
+
+---
+
+## Performance Hotspots
+
+### 1) Excessive debug logging inside per-token loops
+**Where:** `scripts/manager-herald.js`
+- `postConsoleAndNotification(..., true, ...)` is called repeatedly in `_onTokenUpdate`, `_onCombatantTokensUpdate`, and especially:
+  - `_calculateTokenBoundingBox()` (called during auto-fit zoom)
+  - `_shouldPan()` when tokens are off-screen
+  - viewport fill zoom calculations
+
+**Why this matters:** Even if Blacksmith suppresses actual console output when debug is disabled, these calls still:
+- create log payload objects
+- execute conditional logic
+- traverse tokens multiple times
+
+This is especially costly because auto-fit zoom and bounding boxes happen during the “follow”/“spectator” camera adjustment path.
+
+**Recommendation / Status:**
+- Remove or heavily reduce “per token” logs (`Token bounding box contribution`, `_shouldPan()` off-screen messages, and viewport fill zoom calculation logging).
+- Implemented by removing those heavy hot-path debug payload allocations.
+
+---
+
+### 2) Bounding-box calculations are re-run frequently and expensively
+**Where:** `scripts/manager-herald.js`
+- `_onTokenUpdate()` and `_onCombatantTokensUpdate()` compute:
+  - visible tokens list
+  - group centers
+  - auto-fit zoom → `_calculateAutoFitZoom()` → `_calculateTokenBoundingBox()`
+- `_calculateTokenBoundingBox()` loops all tokens and performs per-token width/height math and texture scaling.
+
+**Why this matters:** During active scenes (many tokens), any missed throttling means lots of math + garbage creation.
+
+**Recommendation:**
+- Compute should-pan first and only compute zoom/bounding-box if needed.
+- Cache:
+  - `viewportCssSize` used by `_shouldPan()` / zoom computations
+  - `distanceThreshold` and `throttleMs` values from settings
+  - results of token center/bounding-box computations per “frame” (invalidate on token moved or on relevant setting changes).
+
+---
+
+### 3) Settings lookups on hot paths
+**Where:** `scripts/manager-herald.js`
+- `_shouldPan()` calls `getSettingSafely(...)` for `broadcastFollowDistanceThreshold` and `broadcastFollowThrottleMs` on every call.
+- Multiple camera follow methods call `getSettingSafely(...)` for fill and animation duration.
+
+**Why this matters:** `game.settings.get(...)` can be relatively expensive; doing this repeatedly during frequent `updateToken` / pan events increases CPU use.
+
+**Recommendation:**
+- Cache these setting values and refresh them via the existing `settingChange` HookManager hook.
+
+---
+
+### 4) Token lists are recomputed on every update
+**Where:**
+- `_getVisiblePartyTokens()` uses `canvas.tokens.placeables.filter(...)` and visibility checks.
+- `_getVisibleCombatTokens()` loops through all combatants and then visibility checks.
+- `_getAllVisibleCanvasTokens()` filters `canvas.tokens.placeables` each time.
+
+**Why this matters:** Each “camera follow” call rebuilds arrays and iterates potentially large lists.
+
+**Recommendation:**
+- Avoid recomputation when the underlying token set hasn’t changed (e.g., if `changes` doesn’t include position/state changes and you aren’t forcing pan).
+- Consider caching the last token arrays and only rebuilding when:
+  - tokenMoved is true
+  - canvas scene changes
+  - combat changes
+  - Token Spectator target set changes
+
+---
+
+## Blacksmith API Usage Notes (HookManager / Sockets)
+
+### 1) HookManager usage is mostly correct, but cleanup gaps exist
+**Where:** `scripts/manager-herald.js`
+- Most hook registrations include `context: ...`
+- `cleanup()` disposes several contexts, but misses `broadcast-windows`.
+
+**Recommendation:** dispose the full set of contexts registered in `_registerHooks()` and subordinate `_register*()` functions.
+
+---
+
+### 2) Socket readiness is awaited repeatedly in hot paths (likely expensive)
+**Where:** `scripts/manager-herald.js`
+- `_sendGMViewportSync()` calls `await blacksmith.sockets.waitForReady()` on every send.
+- `_sendPlayerViewportSync()` has the same pattern.
+
+**Why this matters:** `canvasPan` can fire frequently; even a small overhead repeated many times adds up.
+
+**Recommendation:**
+- Create a cached readiness promise (e.g., `this._socketsReadyPromise ||= blacksmith.sockets.waitForReady()`) after initialization.
+- Then await that promise in hot send paths instead of calling `waitForReady()` each time.
+
+---
+
+### 3) Potential overlap / queueing of `canvas.animatePan` calls
+**Where:** multiple camera adjustment methods call `await canvas.animatePan(...)`.
+
+**Why this matters:** If events arrive faster than animation duration, you may end up with overlapping animations or queue behavior (depending on Foundry’s implementation).
+
+**Recommendation:**
+- Track an “animation in flight” state and either:
+  - ignore intermediate calls while one is running, or
+  - coalesce multiple requests into the latest target (debounce cameraman viewport apply).
+
+---
+
+## Quick Checklist (Action Items)
+
+1. Add missing `disposeByContext('broadcast-windows')` in `cleanup()`. (done)
+2. Track/clear all delayed initialization `setTimeout`s via `_trackedSetTimeout`. (done)
+3. Reduce/remove per-token debug payload allocations in `_calculateTokenBoundingBox()` and related hot paths. (done)
+4. Cache settings used in hot functions (`_shouldPan`, fillPercent, animation duration, thresholds`). (not yet implemented)
+5. Cache viewport CSS size for `_shouldPan()` / zoom math (invalidate on resize / pan changes if needed).
+6. Cache socket readiness promise to avoid repeated `waitForReady()` calls in `canvasPan`-driven paths. (done)
+

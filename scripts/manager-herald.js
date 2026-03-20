@@ -47,6 +47,7 @@ export class HeraldManager {
     static _hookIds = new Set(); // HookManager callback IDs
     static _timeoutIds = new Set(); // setTimeout references
     static _socketHandlerNames = new Set(); // Socket handler event names
+    static _socketsReadyPromise = null; // Cached Blacksmith socket readiness promise
 
     /**
      * Initialize the HeraldManager (called with Blacksmith API from herald.js).
@@ -159,7 +160,7 @@ this._blacksmith.HookManager.registerHook({
         });
 
         // We are already in ready (called from herald.js ready). Register bar and tools immediately with short delay.
-        setTimeout(async () => {
+        this._trackedSetTimeout(async () => {
             this._updateBroadcastMode();
             this._registerCameraHooks();
             await this._registerBroadcastBarType();
@@ -189,7 +190,7 @@ this._blacksmith.HookManager.registerHook({
             // Initialize spectator mode camera
             if (mode === 'spectator') {
                 // Wait a bit for canvas to fully initialize
-                setTimeout(async () => {
+                this._trackedSetTimeout(async () => {
                     postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Initializing camera on scene load (spectator mode)", "", true, false);
                     // Trigger camera update by calling _onTokenUpdate with null changes
                     // This will force a pan/zoom to current party token positions
@@ -199,7 +200,7 @@ this._blacksmith.HookManager.registerHook({
             // Initialize combat mode camera (frame all combatants)
             if (mode === 'combat') {
                 // Wait a bit for canvas to fully initialize
-                setTimeout(async () => {
+                this._trackedSetTimeout(async () => {
                     postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Initializing camera on scene load (combat mode)", "", true, false);
                     // Trigger camera update by calling _onCombatantTokensUpdate with null changes
                     await this._onCombatantTokensUpdate(null, {});
@@ -207,7 +208,7 @@ this._blacksmith.HookManager.registerHook({
             }
             // Initialize combat spectator mode camera (frame all combatants)
             if (mode === 'tokenspectator') {
-                setTimeout(async () => {
+                this._trackedSetTimeout(async () => {
                     await this._onTokenSpectatorUpdate(null, {}, true);
                 }, 500);
             }
@@ -243,7 +244,7 @@ this._blacksmith.HookManager.registerHook({
         
         // Also manually trigger after hooks are registered (in case canvas is already ready)
         // This ensures initialization happens even if hooks fire before we register
-        setTimeout(async () => {
+        this._trackedSetTimeout(async () => {
             if (canvas?.ready) {
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Canvas already ready, manually initializing camera", "", true, false);
                 await initializeCamera.call(this);
@@ -360,7 +361,7 @@ this._blacksmith.HookManager.registerHook({
                 }
                 if (mode === 'combat') {
                     // Wait a bit for token to be fully added to canvas, then reframe combatants
-                    setTimeout(async () => {
+                    this._trackedSetTimeout(async () => {
                         postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Processing token creation (combat mode)", { 
                             tokenId: tokenDocument?.id
                         }, true, false);
@@ -369,7 +370,7 @@ this._blacksmith.HookManager.registerHook({
                     return;
                 }
                 if (mode === 'tokenspectator') {
-                    setTimeout(async () => {
+                    this._trackedSetTimeout(async () => {
                         await this._onTokenSpectatorUpdate(tokenDocument, {});
                     }, 100);
                     return;
@@ -380,7 +381,7 @@ this._blacksmith.HookManager.registerHook({
                 }
                 
                 // Wait a bit for token to be fully added to canvas
-                setTimeout(async () => {
+                this._trackedSetTimeout(async () => {
                     postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Processing token creation", { 
                         tokenId: tokenDocument?.id
                     }, true, false);
@@ -725,12 +726,12 @@ this._blacksmith.HookManager.registerHook({
                     if (!canvas?.ready) {
                         postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Canvas not ready, waiting for canvasReady", "", true, false);
                         Hooks.once('canvasReady', () => {
-                            setTimeout(() => {
+                            this._trackedSetTimeout(() => {
                                 this._startGMViewportMonitoring();
                             }, 500);
                         });
                     } else {
-                        setTimeout(() => {
+                        this._trackedSetTimeout(() => {
                             this._startGMViewportMonitoring();
                         }, 500);
                     }
@@ -740,12 +741,12 @@ this._blacksmith.HookManager.registerHook({
                     // Initialize player viewport monitoring if mode is playerview
                     if (!canvas?.ready) {
                         Hooks.once('canvasReady', () => {
-                            setTimeout(() => {
+                            this._trackedSetTimeout(() => {
                                 this._updatePlayerViewportMonitoring();
                             }, 500);
                         });
                     } else {
-                        setTimeout(() => {
+                        this._trackedSetTimeout(() => {
                             this._updatePlayerViewportMonitoring();
                         }, 500);
                     }
@@ -823,8 +824,8 @@ this._blacksmith.HookManager.registerHook({
         };
         
         // Use a small timeout to ensure canvas is fully ready
-        setTimeout(() => {
-            this._sendGMViewportSync(initialPosition);
+        this._trackedSetTimeout(() => {
+            void this._sendGMViewportSync(initialPosition);
         }, 100);
     }
 
@@ -861,9 +862,9 @@ this._blacksmith.HookManager.registerHook({
         postConsoleAndNotification(MODULE.NAME, "BroadcastManager: GM sending viewport", viewportState, true, false);
 
         try {
-            const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
-            await blacksmith?.sockets?.waitForReady();
-            await blacksmith?.sockets?.emit('broadcast.gmViewportSync', viewportState);
+            if (!this._blacksmith?.sockets) return;
+            await this._waitForSocketsReady();
+            await this._blacksmith.sockets.emit('broadcast.gmViewportSync', viewportState);
         } catch (error) {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to send GM viewport sync", error, true, false);
         }
@@ -1747,10 +1748,9 @@ this._blacksmith.HookManager.registerHook({
         try {
             if (!this.isEnabled()) return;
             if (!this._isBroadcastUser()) return;
-            const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
-            if (!blacksmith?.sockets) return;
-            await blacksmith.sockets.waitForReady();
-            await blacksmith.sockets.emit('broadcast.windowOpened', {
+            if (!this._blacksmith?.sockets) return;
+            await this._waitForSocketsReady();
+            await this._blacksmith.sockets.emit('broadcast.windowOpened', {
                 sourceUserId: game.user.id
             });
         } catch (error) {
@@ -1762,10 +1762,9 @@ this._blacksmith.HookManager.registerHook({
         try {
             if (!this.isBroadcastActive()) return;
             const targetIds = Array.from(game.user?.targets || []).map(t => t?.id).filter(Boolean);
-            const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
-            if (!blacksmith?.sockets) return;
-            await blacksmith.sockets.waitForReady();
-            await blacksmith.sockets.emit('broadcast.combatTargets', {
+            if (!this._blacksmith?.sockets) return;
+            await this._waitForSocketsReady();
+            await this._blacksmith.sockets.emit('broadcast.combatTargets', {
                 userId,
                 targetIds
             });
@@ -2007,22 +2006,6 @@ this._blacksmith.HookManager.registerHook({
             maxX = Math.max(maxX, tokenMaxX);
             maxY = Math.max(maxY, tokenMaxY);
             
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Token bounding box contribution", {
-                tokenId: token.id,
-                tokenX: token.x,
-                tokenY: token.y,
-                tokenWidth: tokenWidth,
-                tokenHeight: tokenHeight,
-                gridSize: gridSize,
-                tokenWidthGrid: tokenWidthGrid,
-                tokenHeightGrid: tokenHeightGrid,
-                tokenWidthFromDoc: token.document?.width,
-                tokenHeightFromDoc: token.document?.height,
-                tokenWidthFromPlaceable: token.width,
-                tokenHeightFromPlaceable: token.height,
-                textureScaleX: sx,
-                textureScaleY: sy
-            }, true, false);
         }
         
         const bbox = {
@@ -2033,12 +2016,6 @@ this._blacksmith.HookManager.registerHook({
             width: maxX - minX,
             height: maxY - minY
         };
-        
-        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Total bounding box calculated", {
-            bbox: bbox,
-            tokenCount: tokens.length,
-            gridSize: gridSize
-        }, true, false);
         
         return bbox;
     }
@@ -2095,22 +2072,6 @@ this._blacksmith.HookManager.registerHook({
         const min = canvas.scene?._viewPosition?.minScale ?? 0.25;
         const max = canvas.scene?._viewPosition?.maxScale ?? 3.0;
         const finalZoom = Math.max(min, Math.min(max, zoom));
-
-        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Viewport fill zoom calculation", {
-            boxWidth,
-            boxHeight,
-            fillPercent,
-            clampedFill,
-            fillFraction,
-            viewportWidth,
-            viewportHeight,
-            zoomX,
-            zoomY,
-            zoom,
-            min,
-            max,
-            finalZoom
-        }, true, false);
 
         return finalZoom;
     }
@@ -2176,11 +2137,6 @@ this._blacksmith.HookManager.registerHook({
                     tokenCenter.x > (viewportRight + margin) ||
                     tokenCenter.y < (viewportTop - margin) || 
                     tokenCenter.y > (viewportBottom + margin)) {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Token off-screen, forcing pan", {
-                        tokenId: token.id,
-                        tokenCenter: tokenCenter,
-                        viewportBounds: { left: viewportLeft, top: viewportTop, right: viewportRight, bottom: viewportBottom }
-                    }, true, false);
                     return true; // Force pan if token is off-screen
                 }
             }
@@ -3039,7 +2995,7 @@ this._blacksmith.HookManager.registerHook({
                             isGM: game.user.isGM
                         }, true, false);
                         // Use a small delay to ensure mode change is fully processed
-                        setTimeout(async () => {
+                        this._trackedSetTimeout(async () => {
                             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Calling _adjustViewportForMode", { value }, true, false);
                             await this._adjustViewportForMode(value);
                         }, 50);
@@ -3418,10 +3374,9 @@ this._blacksmith.HookManager.registerHook({
         try {
             if (!this.isBroadcastActive()) return;
             this._lastModeEmit = { mode, at: Date.now() };
-            const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
-            if (!blacksmith?.sockets) return;
-            await blacksmith.sockets.waitForReady();
-            await blacksmith.sockets.emit('broadcast.modeChanged', { mode });
+            if (!this._blacksmith?.sockets) return;
+            await this._waitForSocketsReady();
+            await this._blacksmith.sockets.emit('broadcast.modeChanged', { mode });
         } catch (error) {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to emit mode change", error, true, false);
         }
@@ -3433,10 +3388,9 @@ this._blacksmith.HookManager.registerHook({
     static async _emitMapView() {
         try {
             if (!this.isBroadcastActive()) return;
-            const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
-            if (!blacksmith?.sockets) return;
-            await blacksmith.sockets.waitForReady();
-            await blacksmith.sockets.emit('broadcast.mapView', {});
+            if (!this._blacksmith?.sockets) return;
+            await this._waitForSocketsReady();
+            await this._blacksmith.sockets.emit('broadcast.mapView', {});
         } catch (error) {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to emit map view", error, true, false);
         }
@@ -3457,10 +3411,9 @@ this._blacksmith.HookManager.registerHook({
                 return;
             }
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Emitting window command", { action, targetUserId, force: options.force }, true, false);
-            const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
-            if (!blacksmith?.sockets) return;
-            await blacksmith.sockets.waitForReady();
-            await blacksmith.sockets.emit('broadcast.windowCommand', { action, targetUserId });
+            if (!this._blacksmith?.sockets) return;
+            await this._waitForSocketsReady();
+            await this._blacksmith.sockets.emit('broadcast.windowCommand', { action, targetUserId });
         } catch (error) {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to emit window command", { action, error }, true, false);
         }
@@ -3594,9 +3547,9 @@ this._blacksmith.HookManager.registerHook({
         postConsoleAndNotification(MODULE.NAME, `BroadcastManager: Player ${userId} sending viewport`, viewportState, true, false);
 
         try {
-            const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
-            await blacksmith?.sockets?.waitForReady();
-            await blacksmith?.sockets?.emit('broadcast.playerViewportSync', viewportState);
+            if (!this._blacksmith?.sockets) return;
+            await this._waitForSocketsReady();
+            await this._blacksmith.sockets.emit('broadcast.playerViewportSync', viewportState);
         } catch (error) {
             postConsoleAndNotification(MODULE.NAME, `BroadcastManager: Failed to send player viewport sync for ${userId}`, error, true, false);
         }
@@ -3749,6 +3702,19 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Cached Blacksmith sockets readiness.
+     * Helps avoid repeated `waitForReady()` calls on frequent sync paths (e.g. `canvasPan`).
+     */
+    static async _waitForSocketsReady() {
+        const sockets = this._blacksmith?.sockets ?? game.modules.get('coffee-pub-blacksmith')?.api?.sockets;
+        if (!sockets?.waitForReady) return;
+        if (!this._socketsReadyPromise) {
+            this._socketsReadyPromise = sockets.waitForReady();
+        }
+        await this._socketsReadyPromise;
+    }
+
+    /**
      * Clean up all resources (hooks, timeouts, socket handlers, Maps)
      */
     static cleanup() {
@@ -3757,6 +3723,9 @@ this._blacksmith.HookManager.registerHook({
         // Stop all monitoring
         this._stopGMViewportMonitoring();
         this._stopAllPlayerViewportMonitoring();
+
+        // Reset cached socket readiness (module reload / re-enable should recreate it)
+        this._socketsReadyPromise = null;
 
         // Clear all timeouts
         for (const timeoutId of this._timeoutIds) {
@@ -3782,6 +3751,7 @@ this._blacksmith.HookManager.registerHook({
         this._blacksmith?.HookManager?.disposeByContext('broadcast-mode-buttons');
         this._blacksmith?.HookManager?.disposeByContext('broadcast-playerview-sync');
         this._blacksmith?.HookManager?.disposeByContext('broadcast-player-buttons');
+        this._blacksmith?.HookManager?.disposeByContext('broadcast-windows');
         this._blacksmith?.HookManager?.disposeByContext('broadcast-cleanup');
 
         // Unregister menubar visibility override (if API provides it)
@@ -3800,6 +3770,8 @@ this._blacksmith.HookManager.registerHook({
 
         // Reset initialization flag
         this.isInitialized = false;
+        // Allow window hooks to be re-registered on re-initialize
+        this._broadcastWindowHooksRegistered = false;
 
         postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Cleanup complete", "", true, false);
     }
