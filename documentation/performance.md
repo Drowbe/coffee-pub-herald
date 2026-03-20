@@ -11,7 +11,7 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 | Rank | Severity | Area | Status |
 | --- | --- | --- | --- |
 | 1 | High | HookManager context cleanup gaps (`broadcast-windows`) | Fixed |
-| 2 | High | Delayed timer lifecycle (`setTimeout` tracking/cleanup) | Partially Fixed |
+| 2 | High | Delayed timer lifecycle (`setTimeout` tracking/cleanup) | Fixed |
 | 3 | High | Socket readiness overhead on frequent sync paths | Fixed |
 | 4 | Medium | Hot-path per-token debug payload allocations | Partially Fixed |
 | 5 | Medium | Menubar full rerenders on frequent update paths | Active |
@@ -38,14 +38,14 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 ### 2) Pending `setTimeout` calls are not fully tracked/cleared
 **Where:** `scripts/manager-herald.js`
 - There are many `setTimeout(...)` calls used for initialization and follow-up work.
-- `cleanup()` clears `_timeoutIds`, but **only some timeouts are added** to `_timeoutIds`.
-- The helper `static _trackedSetTimeout(...)` exists but appears **unused**.
+- **Fixed:** All Herald-owned timers go through `_trackedSetTimeout` (single internal `setTimeout` wrapper). Debounced work (`_gmDebounce`, `_playerButtonsDebounce`, `_playerDebounces`) uses `_trackedSetTimeout` plus `_trackedClearTimeout` when cancelling/rescheduling so `_timeoutIds` stays consistent.
+- **`cleanup()`** clears pending debounces explicitly, then clears any remaining `_timeoutIds`, then clears handler maps. `_stopAllPlayerViewportMonitoring()` iterates both `_playerPanHandlers` and `_playerDebounces` keys so orphaned debounce entries cannot survive.
 
 **Why this matters:** If unload/disable occurs while timeouts are pending, those callbacks can still run after `cleanup()`, potentially re-registering hooks/tools or re-triggering socket emissions.
 
 **Recommendation / Status:**
 - Replace untracked `setTimeout` usages with `_trackedSetTimeout(...)` (or store IDs and clear them in `cleanup()`).
-- Implemented for all main delayed initialization + viewport-adjust delays (using `_trackedSetTimeout`), while leaving short-lived debounces that are already cleared (e.g. `_gmDebounce`, `_playerButtonsDebounce`).
+- **Done:** Initialization, viewport delays, GM/player portrait debounces, player viewport debounces, and the broadcast window auto-close socket path all use tracked timers; `cleanup()` mirrors full teardown.
 
 ---
 

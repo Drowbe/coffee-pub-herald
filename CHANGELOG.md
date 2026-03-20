@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [13.0.2] - 2026-03-07
 
+### Fixed
+
+- **Timer lifecycle on unload**: All Herald-owned delays use `_trackedSetTimeout`; debounced timers use `_trackedClearTimeout` when rescheduled. `cleanup()` clears GM/player portrait/player-viewport debounces and remaining `_timeoutIds`; `_stopAllPlayerViewportMonitoring()` stops every user in `_playerPanHandlers` or `_playerDebounces`. See `documentation/performance.md` (Rank 2).
 
 ## [13.0.1] - 2025-03-07
 

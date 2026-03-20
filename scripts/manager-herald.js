@@ -683,12 +683,10 @@ this._blacksmith.HookManager.registerHook({
                     const delaySeconds = getSettingSafely(MODULE.ID, 'broadcastAutoCloseDelaySeconds', 3);
                     const delayMs = Math.max(1, delaySeconds) * 1000;
 
-                    const timeoutId = setTimeout(() => {
+                    this._trackedSetTimeout(() => {
                         this._emitBroadcastWindowCommand('close-images');
                         this._emitBroadcastWindowCommand('close-journals');
                     }, delayMs);
-
-                    this._timeoutIds.add(timeoutId);
                     //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
                 });
 
@@ -807,8 +805,9 @@ this._blacksmith.HookManager.registerHook({
             if (getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') !== 'gmview') return;
 
             // Debounce emits so we don't spam
-            if (this._gmDebounce) clearTimeout(this._gmDebounce);
-            this._gmDebounce = setTimeout(() => {
+            if (this._gmDebounce) this._trackedClearTimeout(this._gmDebounce);
+            this._gmDebounce = this._trackedSetTimeout(() => {
+                this._gmDebounce = null;
                 this._sendGMViewportSync(position);
             }, 150);
         };
@@ -834,7 +833,7 @@ this._blacksmith.HookManager.registerHook({
      */
     static _stopGMViewportMonitoring() {
         if (this._gmDebounce) {
-            clearTimeout(this._gmDebounce);
+            this._trackedClearTimeout(this._gmDebounce);
             this._gmDebounce = null;
         }
         if (this._gmPanHandler) {
@@ -3340,9 +3339,10 @@ this._blacksmith.HookManager.registerHook({
         if (!game.user.isGM) return;
         if (!this.isEnabled()) return;
         if (this._playerButtonsDebounce) {
-            clearTimeout(this._playerButtonsDebounce);
+            this._trackedClearTimeout(this._playerButtonsDebounce);
         }
-        this._playerButtonsDebounce = setTimeout(() => {
+        this._playerButtonsDebounce = this._trackedSetTimeout(() => {
+            this._playerButtonsDebounce = null;
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Syncing player portrait buttons", { reason }, true, false);
             this.registerPlayerPortraitButtons();
             this.registerFollowTokenButtons();
@@ -3492,9 +3492,13 @@ this._blacksmith.HookManager.registerHook({
 
             // Debounce emits
             if (this._playerDebounces.has(userId)) {
-                clearTimeout(this._playerDebounces.get(userId));
+                this._trackedClearTimeout(this._playerDebounces.get(userId));
             }
-            const timeout = setTimeout(() => {
+            let timeout;
+            timeout = this._trackedSetTimeout(() => {
+                if (this._playerDebounces.get(userId) === timeout) {
+                    this._playerDebounces.delete(userId);
+                }
                 this._sendPlayerViewportSync(userId, position);
             }, 150);
             this._playerDebounces.set(userId, timeout);
@@ -3514,7 +3518,7 @@ this._blacksmith.HookManager.registerHook({
      */
     static _stopPlayerViewportMonitoring(userId) {
         if (this._playerDebounces.has(userId)) {
-            clearTimeout(this._playerDebounces.get(userId));
+            this._trackedClearTimeout(this._playerDebounces.get(userId));
             this._playerDebounces.delete(userId);
         }
         if (this._playerPanHandlers.has(userId)) {
@@ -3649,7 +3653,8 @@ this._blacksmith.HookManager.registerHook({
      * Stop all player viewport monitoring
      */
     static _stopAllPlayerViewportMonitoring() {
-        for (const userId of this._playerPanHandlers.keys()) {
+        const userIds = new Set([...this._playerPanHandlers.keys(), ...this._playerDebounces.keys()]);
+        for (const userId of userIds) {
             this._stopPlayerViewportMonitoring(userId);
         }
     }
@@ -3702,6 +3707,16 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Cancel a tracked timeout and remove it from `_timeoutIds` (use when cancelling debounced work early).
+     * @param {number|undefined|null} timeoutId - Return value from `_trackedSetTimeout`
+     */
+    static _trackedClearTimeout(timeoutId) {
+        if (timeoutId == null) return;
+        clearTimeout(timeoutId);
+        this._timeoutIds.delete(timeoutId);
+    }
+
+    /**
      * Cached Blacksmith sockets readiness.
      * Helps avoid repeated `waitForReady()` calls on frequent sync paths (e.g. `canvasPan`).
      */
@@ -3727,21 +3742,28 @@ this._blacksmith.HookManager.registerHook({
         // Reset cached socket readiness (module reload / re-enable should recreate it)
         this._socketsReadyPromise = null;
 
-        // Clear all timeouts
+        // Clear debounced timers (tracked in `_timeoutIds`); null refs so callbacks cannot run stale logic
+        if (this._gmDebounce) {
+            this._trackedClearTimeout(this._gmDebounce);
+            this._gmDebounce = null;
+        }
+        if (this._playerButtonsDebounce) {
+            this._trackedClearTimeout(this._playerButtonsDebounce);
+            this._playerButtonsDebounce = null;
+        }
+        for (const tid of this._playerDebounces.values()) {
+            this._trackedClearTimeout(tid);
+        }
+        this._playerDebounces.clear();
+
+        // Clear any remaining tracked timeouts (defensive; overlaps above are no-ops)
         for (const timeoutId of this._timeoutIds) {
             clearTimeout(timeoutId);
         }
         this._timeoutIds.clear();
 
-        // Clear player debounce if exists
-        if (this._playerButtonsDebounce) {
-            clearTimeout(this._playerButtonsDebounce);
-            this._playerButtonsDebounce = null;
-        }
-
-        // Clear Maps
+        // Clear Maps (handlers already removed by _stopAllPlayerViewportMonitoring)
         this._playerPanHandlers.clear();
-        this._playerDebounces.clear();
 
         // Unregister all HookManager hooks by context
         this._blacksmith?.HookManager?.disposeByContext('broadcast-settings');
