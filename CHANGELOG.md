@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Hot-path performance**: Camera follow / pan / zoom paths use `_hotPathSettings` (refreshed on init and when relevant settings change) instead of calling `game.settings.get` every `_shouldPan` / animate. `_getViewportCssSize()` caches width/height while PIXI renderer dimensions/resolution are unchanged. Fallback defaults for party/token spectator fill and combat view fill now match `settings.js` (70% and 35%) where the old code used incorrect literals.
+- **Menubar renders**: `_requestMenubarRender(immediate)` coalesces Blacksmith `renderMenubar` calls — removed duplicate full renders from `_setBroadcastMode` vs `broadcastMode` setting hook; debounced user connect/disconnect and portrait bar sync; dropped redundant `renderMenubar` / `updateSecondaryBarItemActive` from context menu and combat begin/end where the setting hook already updates UI.
 
 ### Fixed
 

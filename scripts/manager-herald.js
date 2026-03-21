@@ -65,6 +65,9 @@ export class HeraldManager {
     /** `{ width, height, rkey }` — invalidated when PIXI renderer width/height/resolution change. */
     static _viewportCssCache = null;
 
+    /** Debounced `renderMenubar(false)` id from `_requestMenubarRender` (tracked timeout). */
+    static _menubarRenderDebounceId = null;
+
     /** Setting keys that affect `_hotPathSettings` (must match `settings.js` defaults). */
     static _HOT_PATH_SETTING_KEYS = new Set([
         'broadcastFollowDistanceThreshold',
@@ -154,7 +157,7 @@ this._blacksmith.HookManager.registerHook({
                     this._updateBroadcastMode();
                     if (settingKey === 'broadcastBarHeight') this._applyBroadcastBarHeightCss();
                     // Re-render menubar to update view mode button visibility
-                    this._blacksmith.renderMenubar();
+                    this._requestMenubarRender(true);
                 }
                 
                 //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
@@ -170,8 +173,8 @@ this._blacksmith.HookManager.registerHook({
             callback: () => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                 this._updateBroadcastMode();
-                // Re-render menubar to update view mode button visibility
-                this._blacksmith.renderMenubar();
+                // Debounced: connect/disconnect bursts should not full-render per event
+                this._requestMenubarRender(false);
                 //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
             }
         });
@@ -184,8 +187,7 @@ this._blacksmith.HookManager.registerHook({
             callback: () => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                 this._updateBroadcastMode();
-                // Re-render menubar to update view mode button visibility
-                this._blacksmith.renderMenubar();
+                this._requestMenubarRender(false);
                 //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
             }
         });
@@ -197,7 +199,7 @@ this._blacksmith.HookManager.registerHook({
             await this._registerBroadcastBarType();
             this._applyBroadcastBarHeightCss();
             this._registerBroadcastTools();
-            this._blacksmith.renderMenubar();
+            this._requestMenubarRender(true);
         }, 100);
     }
 
@@ -526,10 +528,6 @@ this._blacksmith.HookManager.registerHook({
                 const mode = getSettingSafely(MODULE.ID, 'broadcastCombatBeginMode', 'combatant');
                 if (mode === 'no-change') return;
                 await this._setBroadcastMode(mode);
-                const modeItemMap = { manual: 'broadcast-mode-manual', gmview: 'broadcast-mode-gmview', combat: 'broadcast-mode-combat', combatant: 'broadcast-mode-combatant', tokenspectator: 'broadcast-mode-tokenspectator', spectator: 'broadcast-mode-spectator', mapview: 'broadcast-mode-mapview' };
-                const activeItemId = modeItemMap[mode] || 'broadcast-mode-spectator';
-                this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
-                this._blacksmith.renderMenubar();
             }
         });
 
@@ -544,10 +542,6 @@ this._blacksmith.HookManager.registerHook({
                 const mode = getSettingSafely(MODULE.ID, 'broadcastCombatEndMode', 'spectator');
                 if (mode === 'no-change') return;
                 await this._setBroadcastMode(mode);
-                const modeItemMap = { manual: 'broadcast-mode-manual', gmview: 'broadcast-mode-gmview', combat: 'broadcast-mode-combat', combatant: 'broadcast-mode-combatant', tokenspectator: 'broadcast-mode-tokenspectator', spectator: 'broadcast-mode-spectator', mapview: 'broadcast-mode-mapview' };
-                const activeItemId = modeItemMap[mode] || 'broadcast-mode-spectator';
-                this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
-                this._blacksmith.renderMenubar();
             }
         });
 
@@ -2550,7 +2544,7 @@ this._blacksmith.HookManager.registerHook({
                 const newValue = !enabled;
                 await game.settings.set(MODULE.ID, 'enableBroadcast', newValue);
                 this._updateBroadcastMode();
-                this._blacksmith.renderMenubar();
+                // Menubar: `broadcast-settings` hook calls `_requestMenubarRender(true)`
                 await this._emitBroadcastWindowCommand('refresh', { force: true });
                 if (this._isBroadcastUser()) window.location.reload();
             }
@@ -2570,15 +2564,15 @@ this._blacksmith.HookManager.registerHook({
 
         // GM-only zone: view modes + Tools flyout (Blacksmith API uses "gm" for this zone)
         const gm = [
-            { name: 'Manual', icon: 'fa-solid fa-hand', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('manual'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-manual', true); this._blacksmith.renderMenubar(); } },
-            { name: 'GM View', icon: 'fa-solid fa-chess-king', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('gmview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-gmview', true); this._blacksmith.renderMenubar(); } },
+            { name: 'Manual', icon: 'fa-solid fa-hand', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('manual'); } },
+            { name: 'GM View', icon: 'fa-solid fa-chess-king', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('gmview'); } },
             ...(game.combat ? [
-                { name: game.i18n.localize(MODULE.ID + '.view-mode-combatant'), icon: 'fa-solid fa-helmet-battle', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combatant'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combatant', true); this._blacksmith.renderMenubar(); } },
-                { name: game.i18n.localize(MODULE.ID + '.view-mode-combat'), icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combat'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-combat', true); this._blacksmith.renderMenubar(); } }
+                { name: game.i18n.localize(MODULE.ID + '.view-mode-combatant'), icon: 'fa-solid fa-helmet-battle', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combatant'); } },
+                { name: game.i18n.localize(MODULE.ID + '.view-mode-combat'), icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combat'); } }
             ] : []),
-            { name: game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator'), icon: 'fa-solid fa-chess', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('tokenspectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-tokenspectator', true); this._blacksmith.renderMenubar(); } },
-            { name: game.i18n.localize(MODULE.ID + '.view-mode-spectator'), icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-spectator', true); this._blacksmith.renderMenubar(); } },
-            { name: 'Map View', icon: 'fa-solid fa-map', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('mapview'); this._blacksmith.updateSecondaryBarItemActive('broadcast', 'broadcast-mode-mapview', true); this._blacksmith.renderMenubar(); } }
+            { name: game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator'), icon: 'fa-solid fa-chess', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('tokenspectator'); } },
+            { name: game.i18n.localize(MODULE.ID + '.view-mode-spectator'), icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); } },
+            { name: 'Map View', icon: 'fa-solid fa-map', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('mapview'); } }
         ];
 
         const mirrorUsers = this._getPartyTokensWithUsers().map(entry => entry.user).filter(Boolean);
@@ -2590,8 +2584,6 @@ this._blacksmith.HookManager.registerHook({
                 onClick: async () => {
                     if (this._warnIfNotEnabled()) return;
                     await this._setBroadcastMode(`playerview-${userId}`);
-                    this._blacksmith.updateSecondaryBarItemActive('broadcast', `broadcast-mode-player-${userId}`, true);
-                    this._blacksmith.renderMenubar();
                 }
             };
         });
@@ -2614,8 +2606,6 @@ this._blacksmith.HookManager.registerHook({
                     if (this._warnIfNotEnabled()) return;
                     await game.settings.set(MODULE.ID, 'broadcastFollowTokenId', tokenId);
                     await this._setBroadcastMode('playerview-follow');
-                    this._blacksmith.updateSecondaryBarItemActive('broadcast', `broadcast-follow-token-${tokenId}`, true);
-                    this._blacksmith.renderMenubar();
                 }
             };
         });
@@ -3034,9 +3024,8 @@ this._blacksmith.HookManager.registerHook({
                         this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
                     }
 
-                    // Re-render menubar to update the right section button title/tooltip
-                    // Use immediate=true to ensure it renders right away, not debounced
-                    this._blacksmith.renderMenubar(true);
+                    // View Mode tool title/tooltip read `_getCachedBroadcastMode()` — refresh menubar once
+                    this._requestMenubarRender(true);
 
                     // If GM changes mode, broadcast to other clients immediately
                     if (game.user.isGM && this._shouldEmitModeChange(value)) {
@@ -3173,8 +3162,7 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
 
         if (success) {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: View mode menubar button registered", "", true, false);
-            // Force menubar render to show the new button
-            this._blacksmith.renderMenubar();
+            this._requestMenubarRender(true);
         } else {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to register view mode menubar button", "", false, false);
         }
@@ -3405,6 +3393,7 @@ this._blacksmith.HookManager.registerHook({
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Syncing player portrait buttons", { reason }, true, false);
             this.registerPlayerPortraitButtons();
             this.registerFollowTokenButtons();
+            this._requestMenubarRender(false);
         }, 150);
     }
 
@@ -3508,7 +3497,7 @@ this._blacksmith.HookManager.registerHook({
             if (this.isEnabled() && canvas?.ready) {
                 await this._adjustViewportForMode(mode);
             }
-            this._blacksmith.renderMenubar(true);
+            // Menubar + secondary bar active state: `broadcast-mode-buttons` hook on `broadcastMode`
             return true;
         } catch (error) {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to set broadcast mode", error, true, false);
@@ -3776,6 +3765,30 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Request a Blacksmith menubar re-render; debounces non-immediate calls to coalesce noisy hooks.
+     * @param {boolean} [immediate=false] - If true, render now and cancel any pending debounced render.
+     */
+    static _requestMenubarRender(immediate = false) {
+        const api = this._blacksmith;
+        if (typeof api?.renderMenubar !== 'function') return;
+        if (immediate) {
+            if (this._menubarRenderDebounceId != null) {
+                this._trackedClearTimeout(this._menubarRenderDebounceId);
+                this._menubarRenderDebounceId = null;
+            }
+            api.renderMenubar(true);
+            return;
+        }
+        if (this._menubarRenderDebounceId != null) {
+            this._trackedClearTimeout(this._menubarRenderDebounceId);
+        }
+        this._menubarRenderDebounceId = this._trackedSetTimeout(() => {
+            this._menubarRenderDebounceId = null;
+            api.renderMenubar(false);
+        }, 100);
+    }
+
+    /**
      * Cached Blacksmith sockets readiness.
      * Helps avoid repeated `waitForReady()` calls on frequent sync paths (e.g. `canvasPan`).
      */
@@ -3815,6 +3828,11 @@ this._blacksmith.HookManager.registerHook({
             this._trackedClearTimeout(tid);
         }
         this._playerDebounces.clear();
+
+        if (this._menubarRenderDebounceId != null) {
+            this._trackedClearTimeout(this._menubarRenderDebounceId);
+            this._menubarRenderDebounceId = null;
+        }
 
         // Clear any remaining tracked timeouts (defensive; overlaps above are no-ops)
         for (const timeoutId of this._timeoutIds) {

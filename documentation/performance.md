@@ -14,7 +14,7 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 | 2 | High | Delayed timer lifecycle (`setTimeout` tracking/cleanup) | Fixed |
 | 3 | High | Socket readiness overhead on frequent sync paths | Fixed |
 | 4 | Medium | Hot-path per-token debug payload allocations | Partially Fixed |
-| 5 | Medium | Menubar full rerenders on frequent update paths | Active |
+| 5 | Medium | Menubar full rerenders on frequent update paths | Fixed |
 | 6 | Medium | Repeated settings lookups in hot camera paths | Fixed |
 | 7 | Low | Token list/bounding box recomputation opportunities | Active |
 
@@ -126,6 +126,16 @@ This is especially costly because auto-fit zoom and bounding boxes happen during
 
 ---
 
+### 5) Menubar full `renderMenubar` churn
+**Where:** `scripts/manager-herald.js`
+- `_setBroadcastMode()` used to call `renderMenubar(true)` while the `broadcast-mode-buttons` `settingChange` hook also rendered after the same `game.settings.set('broadcastMode', ...)`.
+- Context menu mode picks, combat begin/end, and enable-toggle duplicated secondary-bar active updates + extra renders.
+
+**Recommendation / Status:**
+- **Fixed:** Centralize via **`_requestMenubarRender(immediate)`** — immediate for user-driven / settings UI; **100ms debounced** `renderMenubar(false)` for `userConnected` / `userDisconnected` and after portrait/follow bar rebuilds. Removed redundant renders from `_setBroadcastMode`, combat hooks, context menu, and enable toggle (single source: hooks + `_requestMenubarRender`).
+
+---
+
 ## Blacksmith API Usage Notes (HookManager / Sockets)
 
 ### 1) HookManager usage is mostly correct, but cleanup gaps exist
@@ -170,4 +180,5 @@ This is especially costly because auto-fit zoom and bounding boxes happen during
 4. Cache settings used in hot functions (`_shouldPan`, fillPercent, animation duration, thresholds`). (done — `_hotPathSettings` + `settingChange`)
 5. Cache viewport CSS size for `_shouldPan()` / zoom math (invalidate on resize / pan changes if needed). (done — renderer-keyed cache + `cleanup()` invalidation)
 6. Cache socket readiness promise to avoid repeated `waitForReady()` calls in `canvasPan`-driven paths. (done)
+7. Debounce / dedupe menubar `renderMenubar` (remove double-render from `_setBroadcastMode` + setting hook; debounce noisy user connect paths). (done — `_requestMenubarRender`)
 
