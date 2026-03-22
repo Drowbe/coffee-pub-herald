@@ -8,14 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [13.0.2] - 2026-03-07
 
+Performance, lifecycle, menubar churn, clearer View Mode status when the cameraman is missing or offline, and a GM tool to toggle the combat bar on the cameraman client.
+
+### Added
+
+- **Toggle combat bar (cameraman)**: Broadcast **Tools** (secondary bar + View Mode → Tools), icon **`fa-solid fa-browser`**, emits `broadcast.windowCommand` **`toggle-combat-bar`**. Cameraman toggles body class `broadcast-show-combat-bar`. Session **`_combatBarVisibilityOverride`** until **Show Combat Bar in Broadcast** changes or module `cleanup()`.
+
 ### Changed
 
-- **Hot-path performance**: Camera follow / pan / zoom paths use `_hotPathSettings` (refreshed on init and when relevant settings change) instead of calling `game.settings.get` every `_shouldPan` / animate. `_getViewportCssSize()` caches width/height while PIXI renderer dimensions/resolution are unchanged. Fallback defaults for party/token spectator fill and combat view fill now match `settings.js` (70% and 35%) where the old code used incorrect literals.
-- **Menubar renders**: `_requestMenubarRender(immediate)` coalesces Blacksmith `renderMenubar` calls — removed duplicate full renders from `_setBroadcastMode` vs `broadcastMode` setting hook; debounced user connect/disconnect and portrait bar sync; dropped redundant `renderMenubar` / `updateSecondaryBarItemActive` from context menu and combat begin/end where the setting hook already updates UI.
+- **Hot-path camera settings**: `_hotPathSettings` + `_refreshHotPathSettingsCache()` on init and when follow threshold/throttle, animation duration, or view-fill settings change; `_shouldPan` and pan/zoom paths use the cache.
+- **Viewport CSS cache**: `_getViewportCssSize()` reuses width/height while PIXI renderer dimensions/resolution are unchanged; `_invalidateViewportCssCache()` on `cleanup()`.
+- **Default fill literals**: Party/token spectator and combat view fill fallbacks in code aligned with `settings.js` (e.g. 70% / 35%).
+- **Menubar / secondary bar churn**: Fewer duplicate `renderMenubar` calls; debounced menubar refresh on `userConnected` / `userDisconnected` and after portrait/follow bar sync; redundant bar updates removed from context menu mode picks and combat begin/end where `_setBroadcastMode` drives state.
+- **View Mode menubar title/tooltip**: Shows the live mode name only when **`isBroadcastActive()`** (enabled + broadcast user set + user logged in). If enabled but not active: **No cameraman** vs **Cameraman offline**; if broadcast off, localized disabled strings (`view-mode-title-disabled`, `view-mode-tooltip-disabled`, `view-mode-tooltip-suffix`, etc.) plus new tool strings (`context-tool-toggle-combat-bar`, hint).
+- **`documentation/performance.md`**: Ranks 2, 5, 6 and checklist updated for timers, menubar debouncing, settings/viewport caching.
 
 ### Fixed
 
-- **Timer lifecycle on unload**: All Herald-owned delays use `_trackedSetTimeout`; debounced timers use `_trackedClearTimeout` when rescheduled. `cleanup()` clears GM/player portrait/player-viewport debounces and remaining `_timeoutIds`; `_stopAllPlayerViewportMonitoring()` stops every user in `_playerPanHandlers` or `_playerDebounces`. See `documentation/performance.md` (Rank 2).
+- **Timer lifecycle on unload** (performance doc Rank 2): Herald-owned delays use `_trackedSetTimeout`; debounced paths use `_trackedClearTimeout`; `cleanup()` clears GM/player debounces and remaining `_timeoutIds`; `_stopAllPlayerViewportMonitoring()` walks both `_playerPanHandlers` and `_playerDebounces`; broadcast window auto-close uses tracked timers.
+- **Broadcast bar / menubar after menubar optimization**: `_setBroadcastMode` always runs **`_syncSecondaryBarActiveForBroadcastMode`** and **`_requestMenubarRender(true)`** after persisting mode — UI is not tied solely to HookManager `settingChange` for `broadcastMode`.
+- **`_stopAllPlayerViewportMonitoring`**: Union of handler and debounce map keys so orphaned player viewport debounces cannot remain.
+
+### Technical
+
+- **`_syncSecondaryBarActiveForBroadcastMode`**, **`_requestMenubarRender`**, **`_trackedClearTimeout`**, **`_HOT_PATH_SETTING_KEYS`**, **`_menubarRenderDebounceId`**, **`_viewportCssCache`**, **`_combatBarVisibilityOverride`**: support the above behavior in `scripts/manager-herald.js`.
 
 ## [13.0.1] - 2025-03-07
 

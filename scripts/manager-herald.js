@@ -68,6 +68,12 @@ export class HeraldManager {
     /** Debounced `renderMenubar(false)` id from `_requestMenubarRender` (tracked timeout). */
     static _menubarRenderDebounceId = null;
 
+    /**
+     * Cameraman-only: when non-null, overrides world `broadcastShowCombatBar` for body class until the setting changes.
+     * @type {boolean|null}
+     */
+    static _combatBarVisibilityOverride = null;
+
     /** Setting keys that affect `_hotPathSettings` (must match `settings.js` defaults). */
     static _HOT_PATH_SETTING_KEYS = new Set([
         'broadcastFollowDistanceThreshold',
@@ -141,6 +147,10 @@ this._blacksmith.HookManager.registerHook({
                 
                 if (moduleId === MODULE.ID && this._HOT_PATH_SETTING_KEYS.has(settingKey)) {
                     this._refreshHotPathSettingsCache();
+                }
+
+                if (moduleId === MODULE.ID && settingKey === 'broadcastShowCombatBar') {
+                    this._combatBarVisibilityOverride = null;
                 }
 
                 if (moduleId === MODULE.ID && (
@@ -686,6 +696,9 @@ this._blacksmith.HookManager.registerHook({
                         case 'settings':
                             game.settings.sheet.render(true);
                             break;
+                        case 'toggle-combat-bar':
+                            this._toggleCombatBarVisibilityOnCameramanClient();
+                            break;
                         default:
                             break;
                     }
@@ -999,11 +1012,17 @@ this._blacksmith.HookManager.registerHook({
                 document.body.classList.remove('hide-notifications');
             }
             
-            // Apply combat bar visibility: when true, show secondary bar when it is the combat toolbar
-            if (getSettingSafely(MODULE.ID, 'broadcastShowCombatBar', true)) {
-                document.body.classList.add('broadcast-show-combat-bar');
-            } else {
-                document.body.classList.remove('broadcast-show-combat-bar');
+            // Apply combat bar visibility (world setting, or session override from GM tool / socket)
+            {
+                const combatBarFromSetting = getSettingSafely(MODULE.ID, 'broadcastShowCombatBar', true);
+                const showCombatBar = this._combatBarVisibilityOverride !== null
+                    ? this._combatBarVisibilityOverride
+                    : combatBarFromSetting;
+                if (showCombatBar) {
+                    document.body.classList.add('broadcast-show-combat-bar');
+                } else {
+                    document.body.classList.remove('broadcast-show-combat-bar');
+                }
             }
             
             // Verify classes were applied
@@ -1029,6 +1048,28 @@ this._blacksmith.HookManager.registerHook({
             }, true, false);
         } else {
             document.body.classList.remove('broadcast-mode', 'hide-interface-left', 'hide-interface-middle', 'hide-interface-right', 'hide-background', 'hide-notifications', 'broadcast-show-combat-bar');
+        }
+    }
+
+    /**
+     * Cameraman client: flip combat secondary bar visibility (CSS class), independent of world setting until setting changes.
+     * Invoked from `broadcast.windowCommand` action `toggle-combat-bar`.
+     */
+    static _toggleCombatBarVisibilityOnCameramanClient() {
+        if (!this._isBroadcastUser()) return;
+        if (!document.body) return;
+        if (!this.isEnabled()) return;
+
+        const combatBarFromSetting = getSettingSafely(MODULE.ID, 'broadcastShowCombatBar', true);
+        const effective = this._combatBarVisibilityOverride !== null
+            ? this._combatBarVisibilityOverride
+            : combatBarFromSetting;
+        const next = !effective;
+        this._combatBarVisibilityOverride = next;
+        if (next) {
+            document.body.classList.add('broadcast-show-combat-bar');
+        } else {
+            document.body.classList.remove('broadcast-show-combat-bar');
         }
     }
 
@@ -2622,6 +2663,7 @@ this._blacksmith.HookManager.registerHook({
             { name: game.i18n.localize(MODULE.ID + '.context-tool-close-journals'), icon: 'fa-solid fa-book-open', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-journals'); } },
             { name: game.i18n.localize(MODULE.ID + '.context-tool-close-all'), icon: 'fa-solid fa-circle-xmark', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-all'); } },
             { name: game.i18n.localize(MODULE.ID + '.context-tool-refresh'), icon: 'fa-solid fa-rotate', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('refresh'); } },
+            { name: game.i18n.localize(MODULE.ID + '.context-tool-toggle-combat-bar'), icon: 'fa-solid fa-browser', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('toggle-combat-bar'); } },
             { name: game.i18n.localize(MODULE.ID + '.context-tool-settings'), icon: 'fa-solid fa-gear', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('settings'); } }
         ];
         gm.push({
@@ -2916,13 +2958,28 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-refresh',
             }
         });
 
+this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-toggle-combat-bar', {
+            icon: 'fa-solid fa-browser',
+            label: null,
+            tooltip: () => game.i18n.localize(MODULE.ID + '.context-tool-toggle-combat-bar-hint'),
+            group: 'tools',
+            toggleable: false,
+            order: 4,
+            visible: () => game.user.isGM,
+            onClick: async () => {
+                if (!game.user.isGM) return;
+                if (this._warnIfNotEnabled()) return;
+                await this._emitBroadcastWindowCommand('toggle-combat-bar');
+            }
+        });
+
 this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-settings', {
             icon: 'fa-solid fa-gear',
             label: null,
             tooltip: 'Open broadcast settings',
             group: 'tools',
             toggleable: false,
-            order: 4,
+            order: 5,
             visible: () => game.user.isGM,
             onClick: async () => {
                 if (!game.user.isGM) return;
@@ -3118,24 +3175,32 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             icon: 'fa-solid fa-video',
             name: 'broadcast-view-mode',
             title: () => {
-                if (!this.isEnabled() || !this._getBroadcastUser()) {
-                    return 'View Mode';
+                if (!this.isEnabled()) {
+                    return game.i18n.localize(MODULE.ID + '.view-mode-title-disabled') || 'View Mode';
                 }
-                if (!this._isBroadcastUserConnected()) {
-                    return game.i18n.localize(MODULE.ID + '.view-mode-cameraman-disconnected');
+                // Never show the live mode name unless broadcast is actually reachable (user set + logged in)
+                if (!this.isBroadcastActive()) {
+                    if (!this._getBroadcastUser()) {
+                        return game.i18n.localize(MODULE.ID + '.view-mode-no-cameraman') || 'No cameraman';
+                    }
+                    return game.i18n.localize(MODULE.ID + '.view-mode-cameraman-disconnected') || 'Cameraman offline';
                 }
                 const mode = this._getCachedBroadcastMode();
                 return getModeDisplayName(mode);
             },
             tooltip: () => {
-                if (!this.isEnabled() || !this._getBroadcastUser()) {
-                    return 'View Mode (Not Active) - Left-click: open menu';
+                const suffix = game.i18n.localize(MODULE.ID + '.view-mode-tooltip-suffix') || ' — Left-click: open menu';
+                if (!this.isEnabled()) {
+                    return (game.i18n.localize(MODULE.ID + '.view-mode-tooltip-disabled') || 'View Mode (broadcast off)') + suffix;
                 }
-                if (!this._isBroadcastUserConnected()) {
-                    return game.i18n.localize(MODULE.ID + '.view-mode-cameraman-disconnected') + ' - Left-click: open menu';
+                if (!this.isBroadcastActive()) {
+                    if (!this._getBroadcastUser()) {
+                        return (game.i18n.localize(MODULE.ID + '.view-mode-no-cameraman-hint') || 'No broadcast user selected in module settings') + suffix;
+                    }
+                    return (game.i18n.localize(MODULE.ID + '.view-mode-cameraman-offline-hint') || 'The broadcast user is not logged in') + suffix;
                 }
                 const mode = this._getCachedBroadcastMode();
-                return `${getModeDisplayName(mode)} - Left-click: open menu`;
+                return `${getModeDisplayName(mode)}${suffix}`;
             },
             zone: 'right',
             group: 'general',
@@ -3814,6 +3879,7 @@ this._blacksmith.HookManager.registerHook({
         // Reset cached socket readiness (module reload / re-enable should recreate it)
         this._socketsReadyPromise = null;
         this._invalidateViewportCssCache();
+        this._combatBarVisibilityOverride = null;
 
         // Clear debounced timers (tracked in `_timeoutIds`); null refs so callbacks cannot run stale logic
         if (this._gmDebounce) {
