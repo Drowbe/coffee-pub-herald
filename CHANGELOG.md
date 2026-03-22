@@ -21,9 +21,11 @@ Performance, lifecycle, menubar churn, clearer View Mode status when the cameram
 - **Default fill literals**: Party/token spectator and combat view fill fallbacks in code aligned with `settings.js` (e.g. 70% / 35%).
 - **Menubar / secondary bar churn**: Fewer duplicate `renderMenubar` calls; debounced menubar refresh on `userConnected` / `userDisconnected` and after portrait/follow bar sync; redundant bar updates removed from context menu mode picks and combat begin/end where `_setBroadcastMode` drives state.
 - **View Mode menubar title/tooltip**: Shows the live mode name only when **`isBroadcastActive()`** (enabled + broadcast user set + user logged in). If enabled but not active: **No cameraman** vs **Cameraman offline**; if broadcast off, localized disabled strings (`view-mode-title-disabled`, `view-mode-tooltip-disabled`, `view-mode-tooltip-suffix`, etc.) plus new tool strings (`context-tool-toggle-combat-bar`, hint).
-- **`documentation/performance.md`**: Ranks 2, 5, 6 and checklist updated for timers, menubar debouncing, settings/viewport caching.
+- **`documentation/performance.md`**: Ranks 2, 4, 5, 6 and checklist updated for timers, hot-path debug removal, menubar debouncing, settings/viewport caching.
 
 ### Fixed
+
+- **Hot-path debug allocations** (performance doc Rank 4): Removed verbose `postConsoleAndNotification(..., true, ...)` and heavy `result` objects from `updateToken` / `createToken`, `_onTokenUpdate` / `_onCombatantTokensUpdate`, GM/player viewport send/apply/socket paths, `_adjustViewportForMode` sync logs, `broadcast-mode-buttons` viewport branch, and `_updateBroadcastMode` verification logging; dropped DOM queries that existed only for that log.
 
 - **Timer lifecycle on unload** (performance doc Rank 2): Herald-owned delays use `_trackedSetTimeout`; debounced paths use `_trackedClearTimeout`; `cleanup()` clears GM/player debounces and remaining `_timeoutIds`; `_stopAllPlayerViewportMonitoring()` walks both `_playerPanHandlers` and `_playerDebounces`; broadcast window auto-close uses tracked timers.
 - **Broadcast bar / menubar after menubar optimization**: `_setBroadcastMode` always runs **`_syncSecondaryBarActiveForBroadcastMode`** and **`_requestMenubarRender(true)`** after persisting mode — UI is not tied solely to HookManager `settingChange` for `broadcastMode`.

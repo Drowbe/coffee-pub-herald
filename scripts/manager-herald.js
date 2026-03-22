@@ -303,21 +303,11 @@ this._blacksmith.HookManager.registerHook({
             callback: async (tokenDocument, changes, options, userId) => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                 
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: updateToken hook fired", {
-                    tokenId: tokenDocument?.id,
-                    changes: changes,
-                    isBroadcastUser: this._isBroadcastUser(),
-                    isEnabled: this.isEnabled(),
-                    mode: getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator')
-                }, true, false);
-                
                 // Only process for broadcast user
                 if (!this._isBroadcastUser()) {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Not broadcast user, skipping", "", true, false);
                     return;
                 }
                 if (!this.isEnabled()) {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Broadcast not enabled, skipping", "", true, false);
                     return;
                 }
                 
@@ -349,18 +339,12 @@ this._blacksmith.HookManager.registerHook({
                     return;
                 }
                 if (mode !== 'spectator') {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Not in spectator mode, skipping", { mode }, true, false);
                     return;
                 }
                 
                 // Process token update (even if no position changes in this hook call)
                 // This ensures we pan/zoom to final position when token stops moving
                 // The _shouldPan() check will handle throttling and distance threshold
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Processing token update", { 
-                    changes: changes,
-                    hasPositionChanges: changes && (changes.x !== undefined || changes.y !== undefined)
-                }, true, false);
-                
                 // Follow party tokens (await to ensure zoom updates complete)
                 // Pass changes but always check current token position
                 await this._onTokenUpdate(tokenDocument, changes);
@@ -378,18 +362,11 @@ this._blacksmith.HookManager.registerHook({
             callback: async (tokenDocument, options, userId) => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                 
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: createToken hook fired", {
-                    tokenId: tokenDocument?.id,
-                    tokenName: tokenDocument?.name
-                }, true, false);
-                
                 // Only process for broadcast user
                 if (!this._isBroadcastUser()) {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Not broadcast user, skipping", "", true, false);
                     return;
                 }
                 if (!this.isEnabled()) {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Broadcast not enabled, skipping", "", true, false);
                     return;
                 }
                 
@@ -405,9 +382,6 @@ this._blacksmith.HookManager.registerHook({
                 if (mode === 'combat') {
                     // Wait a bit for token to be fully added to canvas, then reframe combatants
                     this._trackedSetTimeout(async () => {
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Processing token creation (combat mode)", { 
-                            tokenId: tokenDocument?.id
-                        }, true, false);
                         await this._onCombatantTokensUpdate(tokenDocument, {});
                     }, 100);
                     return;
@@ -419,16 +393,11 @@ this._blacksmith.HookManager.registerHook({
                     return;
                 }
                 if (mode !== 'spectator') {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Not in spectator mode, skipping", { mode }, true, false);
                     return;
                 }
                 
                 // Wait a bit for token to be fully added to canvas
                 this._trackedSetTimeout(async () => {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Processing token creation", { 
-                        tokenId: tokenDocument?.id
-                    }, true, false);
-                    
                     // Trigger camera update to adapt to new party token
                     // Pass the tokenDocument but no changes (it's a new token at its initial position)
                     await this._onTokenUpdate(tokenDocument, {});
@@ -592,27 +561,16 @@ this._blacksmith.HookManager.registerHook({
                 await blacksmith.sockets.register(gmViewportSyncHandler, async (data, userId) => {
                     //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                     
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Received GM viewport sync", { 
-                        data, 
-                        userId, 
-                        isBroadcastUser: this._isBroadcastUser(),
-                        isEnabled: this.isEnabled(),
-                        mode: getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator')
-                    }, true, false);
-                    
                     // Only process if we're the broadcast user and in GM view mode
                     if (!this._isBroadcastUser()) {
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Not broadcast user, ignoring GM viewport sync", "", true, false);
                         return;
                     }
                     if (!this.isEnabled()) {
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Broadcast not enabled, ignoring GM viewport sync", "", true, false);
                         return;
                     }
                     
                     const mode = getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator');
                     if (mode !== 'gmview') {
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Not in GM view mode, ignoring sync", { mode }, true, false);
                         return;
                     }
                     
@@ -804,11 +762,9 @@ this._blacksmith.HookManager.registerHook({
                     
                     // If we're GM and mode changed to gmview, start monitoring
                     if (game.user.isGM && this.isEnabled() && value === 'gmview') {
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Starting GM viewport monitoring from settingChange hook", "", true, false);
                         this._startGMViewportMonitoring();
                     } else {
                         // Stop monitoring if mode changed away from gmview
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Stopping GM viewport monitoring", "", true, false);
                         this._stopGMViewportMonitoring();
                     }
                 }
@@ -834,8 +790,6 @@ this._blacksmith.HookManager.registerHook({
             Hooks.once('canvasReady', () => this._startGMViewportMonitoring());
             return;
         }
-
-        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: GM viewport monitoring ON (canvasPan)", "", true, false);
 
         this._gmPanHandler = (c, position) => {
             // position is {x,y,scale} center coords
@@ -896,8 +850,6 @@ this._blacksmith.HookManager.registerHook({
             scale: position.scale ?? canvas.stage?.scale?.x ?? 1
         };
 
-        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: GM sending viewport", viewportState, true, false);
-
         try {
             if (!this._blacksmith?.sockets) return;
             await this._waitForSocketsReady();
@@ -919,8 +871,6 @@ this._blacksmith.HookManager.registerHook({
 
         // Guard correctly (allow 0)
         if (viewportState?.x == null || viewportState?.y == null || viewportState?.scale == null) return;
-
-        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Applying GM viewport", viewportState, true, false);
 
         const duration = this._hotPathSettings.animationDuration;
 
@@ -968,13 +918,6 @@ this._blacksmith.HookManager.registerHook({
         }
 
         const isBroadcastUser = this._isBroadcastUser();
-        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Checking broadcast mode", {
-            isEnabled: isEnabled,
-            isBroadcastUser: isBroadcastUser,
-            currentUserId: game.user?.id,
-            currentUserName: game.user?.name,
-            broadcastUserId: getSettingSafely(MODULE.ID, 'broadcastUserId', '')
-        }, true, false);
 
         if (isBroadcastUser) {
             document.body.classList.add('broadcast-mode');
@@ -1024,28 +967,6 @@ this._blacksmith.HookManager.registerHook({
                     document.body.classList.remove('broadcast-show-combat-bar');
                 }
             }
-            
-            // Verify classes were applied
-            const hasBroadcastClass = document.body.classList.contains('broadcast-mode');
-            const hasLeftClass = document.body.classList.contains('hide-interface-left');
-            const hasMiddleClass = document.body.classList.contains('hide-interface-middle');
-            const hasRightClass = document.body.classList.contains('hide-interface-right');
-            
-            // Check if elements exist
-            const interfaceExists = !!document.getElementById('interface');
-            const menubarExists = !!document.querySelector('.blacksmith-menubar-container');
-            const squireExists = !!document.querySelector('.squire-tray');
-            
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Broadcast mode activated", {
-                broadcastClass: hasBroadcastClass,
-                leftClass: hasLeftClass,
-                middleClass: hasMiddleClass,
-                rightClass: hasRightClass,
-                interfaceExists: interfaceExists,
-                menubarExists: menubarExists,
-                squireExists: squireExists,
-                bodyClasses: Array.from(document.body.classList)
-            }, true, false);
         } else {
             document.body.classList.remove('broadcast-mode', 'hide-interface-left', 'hide-interface-middle', 'hide-interface-right', 'hide-background', 'hide-notifications', 'broadcast-show-combat-bar');
         }
@@ -1091,21 +1012,10 @@ this._blacksmith.HookManager.registerHook({
             // Allow null tokenDocument for initialization (scene load)
             const isInitialization = !tokenDocument;
             
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: _onTokenUpdate called", {
-                tokenId: tokenDocument?.id,
-                changes: changes,
-                isInitialization: isInitialization
-            }, true, false);
-            
             // Get party tokens visible to broadcast user
             let partyTokens = this._getVisiblePartyTokens();
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Found party tokens", {
-                count: partyTokens?.length || 0,
-                tokenIds: partyTokens?.map(t => t.id) || []
-            }, true, false);
             
             if (!partyTokens || partyTokens.length === 0) {
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: No party tokens found, skipping", "", true, false);
                 return;
             }
             
@@ -1119,13 +1029,6 @@ this._blacksmith.HookManager.registerHook({
                         // Use the NEW position from tokenDocument, not the placeable
                         updatedToken.x = changes.x !== undefined ? changes.x : token.x;
                         updatedToken.y = changes.y !== undefined ? changes.y : token.y;
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Updated token position from changes", {
-                            tokenId: token.id,
-                            oldX: token.x,
-                            oldY: token.y,
-                            newX: updatedToken.x,
-                            newY: updatedToken.y
-                        }, true, false);
                         return updatedToken;
                     }
                     return token;
@@ -1141,11 +1044,6 @@ this._blacksmith.HookManager.registerHook({
             
             if (!targetPosition) return;
             
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Target position calculated", {
-                tokenCount: partyTokens.length,
-                targetPosition: targetPosition
-            }, true, false);
-            
             // Calculate zoom based on token count (affects cameraman's viewport)
             let finalZoom;
             
@@ -1155,17 +1053,9 @@ this._blacksmith.HookManager.registerHook({
             
             if (autoFitZoom !== null) {
                 finalZoom = autoFitZoom;
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Auto-fit zoom calculated", {
-                    tokenCount: partyTokens.length,
-                    fillPercent: fillPercent,
-                    autoFitZoom: autoFitZoom
-                }, true, false);
             } else {
                 // Fallback to current zoom if auto-fit calculation fails
                 finalZoom = canvas.stage?.scale?.x ?? 1.0;
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Auto-fit zoom failed, using current", {
-                    finalZoom: finalZoom
-                }, false, false);
             }
             
             // When a token in the group moved, always reframe (don't gate by distance/throttle)
@@ -1175,11 +1065,6 @@ this._blacksmith.HookManager.registerHook({
             // Skip gating for initialization (scene load) or when a token moved - always pan/zoom
             // Pass partyTokens to check if any are off-screen (forces pan)
             const shouldPan = isInitialization || tokenMoved || this._shouldPan(targetPosition, partyTokens);
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Should pan check", {
-                shouldPan: shouldPan,
-                targetPosition: targetPosition,
-                lastPanPosition: this._lastPanPosition
-            }, true, false);
             
             // Zoom gating (new: check if zoom needs to change)
             // Always check zoom since we always calculate finalZoom now
@@ -1188,29 +1073,17 @@ this._blacksmith.HookManager.registerHook({
             
             // If neither pan nor zoom is needed, return early
             if (!shouldPan && !shouldZoom) {
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Pan/zoom blocked by threshold/throttle", {
-                    shouldPan: shouldPan,
-                    shouldZoom: shouldZoom
-                }, true, false);
                 return;
             }
             
             // Sanity check zoom value and bounds
             if (finalZoom !== undefined) {
                 if (!Number.isFinite(finalZoom)) {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Invalid finalZoom", {
-                        finalZoom: finalZoom
-                    }, false, false);
                     return;
                 }
                 const min = canvas.scene?._viewPosition?.minScale ?? 0.25;
                 const max = canvas.scene?._viewPosition?.maxScale ?? 3.0;
                 if (finalZoom < min || finalZoom > max) {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: finalZoom outside bounds, clamping", {
-                        finalZoom: finalZoom,
-                        min: min,
-                        max: max
-                    }, false, false);
                     // Clamp to bounds
                     finalZoom = Math.max(min, Math.min(max, finalZoom));
                 }
@@ -1228,14 +1101,6 @@ this._blacksmith.HookManager.registerHook({
                 duration: animationDuration,
                 easing: "easeInOutCosine" // Smooth ease in/out animation
             };
-            
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Pan/zoom execute", {
-                shouldPan: shouldPan,
-                shouldZoom: shouldZoom,
-                currentZoom: currentZoom,
-                finalZoom: finalZoom,
-                panOptions: panOptions
-            }, true, false);
             
             // Await to ensure scale update completes before updating lastPanPosition
             await canvas.animatePan(panOptions);
@@ -1264,22 +1129,10 @@ this._blacksmith.HookManager.registerHook({
         try {
             const isInitialization = !tokenDocument;
 
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: _onCombatantTokensUpdate called", {
-                tokenId: tokenDocument?.id,
-                changes: changes,
-                isInitialization: isInitialization,
-                forcePan: forcePan
-            }, true, false);
-
             // Get visible combatant tokens
             let combatTokens = this._getVisibleCombatTokens();
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Found combatant tokens", {
-                count: combatTokens?.length || 0,
-                tokenIds: combatTokens?.map(t => t.id) || []
-            }, true, false);
 
             if (!combatTokens || combatTokens.length === 0) {
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: No combatant tokens found, skipping", "", true, false);
                 return;
             }
 
@@ -1290,13 +1143,6 @@ this._blacksmith.HookManager.registerHook({
                         const updatedToken = Object.assign({}, token);
                         updatedToken.x = changes.x !== undefined ? changes.x : token.x;
                         updatedToken.y = changes.y !== undefined ? changes.y : token.y;
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Updated combatant token position from changes", {
-                            tokenId: token.id,
-                            oldX: token.x,
-                            oldY: token.y,
-                            newX: updatedToken.x,
-                            newY: updatedToken.y
-                        }, true, false);
                         return updatedToken;
                     }
                     return token;
@@ -1310,11 +1156,6 @@ this._blacksmith.HookManager.registerHook({
 
             if (!targetPosition) return;
 
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant target position calculated", {
-                tokenCount: combatTokens.length,
-                targetPosition: targetPosition
-            }, true, false);
-
             // Calculate zoom based on bounding box + viewport fill
             let finalZoom;
             const fillPercent = this._hotPathSettings.spectatorPartyBoxFill;
@@ -1322,53 +1163,28 @@ this._blacksmith.HookManager.registerHook({
 
             if (autoFitZoom !== null) {
                 finalZoom = autoFitZoom;
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant auto-fit zoom calculated", {
-                    tokenCount: combatTokens.length,
-                    fillPercent: fillPercent,
-                    autoFitZoom: autoFitZoom
-                }, true, false);
             } else {
                 finalZoom = canvas.stage?.scale?.x ?? 1.0;
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant auto-fit zoom failed, using current", {
-                    finalZoom: finalZoom
-                }, false, false);
             }
 
             // When a combatant token moved, always reframe (same as spectator modes)
             const tokenMoved = tokenDocument && changes && (changes.x !== undefined || changes.y !== undefined);
             const shouldPan = forcePan ? true : (isInitialization ? true : tokenMoved || this._shouldPan(targetPosition, combatTokens));
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant should pan check", {
-                shouldPan: shouldPan,
-                targetPosition: targetPosition,
-                lastPanPosition: this._lastPanPosition
-            }, true, false);
 
             const currentZoom = canvas.stage?.scale?.x ?? canvas.scene?._viewPosition?.scale ?? 1.0;
             const shouldZoom = Math.abs(currentZoom - finalZoom) > 0.001;
 
             if (!shouldPan && !shouldZoom) {
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant pan/zoom blocked by threshold/throttle", {
-                    shouldPan: shouldPan,
-                    shouldZoom: shouldZoom
-                }, true, false);
                 return;
             }
 
             if (finalZoom !== undefined) {
                 if (!Number.isFinite(finalZoom)) {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Invalid combatant finalZoom", {
-                        finalZoom: finalZoom
-                    }, false, false);
                     return;
                 }
                 const min = canvas.scene?._viewPosition?.minScale ?? 0.25;
                 const max = canvas.scene?._viewPosition?.maxScale ?? 3.0;
                 if (finalZoom < min || finalZoom > max) {
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant finalZoom outside bounds, clamping", {
-                        finalZoom: finalZoom,
-                        min: min,
-                        max: max
-                    }, false, false);
                     finalZoom = Math.max(min, Math.min(max, finalZoom));
                 }
             }
@@ -1381,14 +1197,6 @@ this._blacksmith.HookManager.registerHook({
                 duration: animationDuration,
                 easing: "easeInOutCosine"
             };
-
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Combatant pan/zoom execute", {
-                shouldPan: shouldPan,
-                shouldZoom: shouldZoom,
-                currentZoom: currentZoom,
-                finalZoom: finalZoom,
-                panOptions: panOptions
-            }, true, false);
 
             await canvas.animatePan(panOptions);
 
@@ -1479,12 +1287,6 @@ this._blacksmith.HookManager.registerHook({
             }
         }
         
-        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Adjusting viewport for mode change", { 
-            mode,
-            isBroadcastUser: this._isBroadcastUser(),
-            isGM: game.user.isGM
-        }, true, false);
-        
         if (mode === 'spectator') {
             // Only adjust viewport for broadcast user (cameraman)
             if (this._isBroadcastUser()) {
@@ -1519,7 +1321,6 @@ this._blacksmith.HookManager.registerHook({
             // For GM view, the GM client sends initial sync, cameraman receives it
             // GM: trigger initial sync (not the broadcast user, so early return doesn't apply)
             if (game.user.isGM) {
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: GM view mode - GM client triggering initial sync", "", true, false);
                 // The _startGMViewportMonitoring will send initial state
                 // But we should also trigger it here if not already monitoring
                 if (!this._gmPanHandler) {
@@ -1530,7 +1331,6 @@ this._blacksmith.HookManager.registerHook({
                     const centerX = view.x ?? 0;
                     const centerY = view.y ?? 0;
                     const currentScale = view.scale ?? canvas.stage?.scale?.x ?? 1;
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: GM sending immediate viewport sync", { centerX, centerY, currentScale }, true, false);
                     this._sendGMViewportSync({ x: centerX, y: centerY, scale: currentScale });
                 }
             }
@@ -1552,7 +1352,6 @@ this._blacksmith.HookManager.registerHook({
             }
             const userId = mode.replace('playerview-', '');
             if (game.user.id === userId) {
-                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Player view mode - Player client triggering initial sync", { userId }, true, false);
                 // The _startPlayerViewportMonitoring will send initial state
                 // But we should also trigger it here if not already monitoring
                 if (!this._playerPanHandlers.has(userId)) {
@@ -1563,7 +1362,6 @@ this._blacksmith.HookManager.registerHook({
                     const centerX = view.x ?? 0;
                     const centerY = view.y ?? 0;
                     const currentScale = view.scale ?? canvas.stage?.scale?.x ?? 1;
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Player sending immediate viewport sync", { userId, centerX, centerY, currentScale }, true, false);
                     this._sendPlayerViewportSync(userId, { x: centerX, y: centerY, scale: currentScale });
                 }
             }
@@ -3042,12 +2840,6 @@ this._blacksmith.HookManager.registerHook({
                 
                 if (moduleId === MODULE.ID && settingKey === 'broadcastMode') {
                     this._lastBroadcastMode = value;
-                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Setting change hook fired for broadcastMode", { 
-                        value, 
-                        isBroadcastUser: this._isBroadcastUser(),
-                        isEnabled: this.isEnabled(),
-                        canvasReady: canvas?.ready
-                    }, true, false);
                     
                     // Update active state to match the setting (switch mode handles deactivating others)
                     // Check if mode is a playerview mode (playerview-{userId})
@@ -3093,22 +2885,10 @@ this._blacksmith.HookManager.registerHook({
                     // Note: For GM/Player view modes, the GM/Player client needs to send sync
                     // For Spectator/Combat modes, only the broadcast user (cameraman) adjusts viewport
                     if (this.isEnabled() && canvas?.ready) {
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Conditions met, will adjust viewport", { 
-                            value,
-                            isBroadcastUser: this._isBroadcastUser(),
-                            isGM: game.user.isGM
-                        }, true, false);
                         // Use a small delay to ensure mode change is fully processed
                         this._trackedSetTimeout(async () => {
-                            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Calling _adjustViewportForMode", { value }, true, false);
                             await this._adjustViewportForMode(value);
                         }, 50);
-                    } else {
-                        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Conditions NOT met, skipping viewport adjustment", { 
-                            isBroadcastUser: this._isBroadcastUser(),
-                            isEnabled: this.isEnabled(),
-                            canvasReady: canvas?.ready
-                        }, true, false);
                     }
                 }
                 
@@ -3595,8 +3375,6 @@ this._blacksmith.HookManager.registerHook({
             return;
         }
 
-        postConsoleAndNotification(MODULE.NAME, `BroadcastManager: Player viewport monitoring ON for ${userId}`, "", true, false);
-
         const handler = (c, position) => {
             // Check if we should send viewport updates
             if (!this.isEnabled()) return;
@@ -3660,8 +3438,6 @@ this._blacksmith.HookManager.registerHook({
             y: position.y,
             scale: position.scale ?? canvas.stage?.scale?.x ?? 1
         };
-
-        postConsoleAndNotification(MODULE.NAME, `BroadcastManager: Player ${userId} sending viewport`, viewportState, true, false);
 
         try {
             if (!this._blacksmith?.sockets) return;
@@ -3786,8 +3562,6 @@ this._blacksmith.HookManager.registerHook({
 
         // Guard correctly (allow 0)
         if (viewportState?.x == null || viewportState?.y == null || viewportState?.scale == null) return;
-
-        postConsoleAndNotification(MODULE.NAME, `BroadcastManager: Applying player ${viewportState.userId} viewport`, viewportState, true, false);
 
         const duration = this._hotPathSettings.animationDuration;
 

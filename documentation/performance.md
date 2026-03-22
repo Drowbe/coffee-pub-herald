@@ -13,7 +13,7 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 | 1 | High | HookManager context cleanup gaps (`broadcast-windows`) | Fixed |
 | 2 | High | Delayed timer lifecycle (`setTimeout` tracking/cleanup) | Fixed |
 | 3 | High | Socket readiness overhead on frequent sync paths | Fixed |
-| 4 | Medium | Hot-path per-token debug payload allocations | Partially Fixed |
+| 4 | Medium | Hot-path per-token debug payload allocations | Fixed |
 | 5 | Medium | Menubar full rerenders on frequent update paths | Fixed |
 | 6 | Medium | Repeated settings lookups in hot camera paths | Fixed |
 | 7 | Low | Token list/bounding box recomputation opportunities | Active |
@@ -65,23 +65,22 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 
 ## Performance Hotspots
 
-### 1) Excessive debug logging inside per-token loops
+### 1) Excessive debug logging on camera hot paths
 **Where:** `scripts/manager-herald.js`
-- `postConsoleAndNotification(..., true, ...)` is called repeatedly in `_onTokenUpdate`, `_onCombatantTokensUpdate`, and especially:
-  - `_calculateTokenBoundingBox()` (called during auto-fit zoom)
-  - `_shouldPan()` when tokens are off-screen
-  - viewport fill zoom calculations
+- **Fixed:** Removed `postConsoleAndNotification(..., true, ...)` (and large inline `result` objects) from:
+  - `updateToken` / `createToken` HookManager callbacks
+  - `_onTokenUpdate` / `_onCombatantTokensUpdate` (including pan/zoom gating and execute paths)
+  - GM/player viewport sync: `_sendGMViewportSync`, `_applyGMViewport`, GM viewport socket handler, `_sendPlayerViewportSync`, `_applyPlayerViewport`, `_startGMViewportMonitoring` “ON” log
+  - `_adjustViewportForMode` immediate sync logs
+  - `broadcast-mode-buttons` `settingChange` viewport-adjustment debug
+  - `_updateBroadcastMode` “checking mode” / “activated” payloads and the DOM verification block used only for that log
+- **Note:** `_calculateTokenBoundingBox()` / `_shouldPan()` were already free of per-token debug; errors in `catch` blocks still use `postConsoleAndNotification` where useful.
 
-**Why this matters:** Even if Blacksmith suppresses actual console output when debug is disabled, these calls still:
-- create log payload objects
-- execute conditional logic
-- traverse tokens multiple times
-
-This is especially costly because auto-fit zoom and bounding boxes happen during the “follow”/“spectator” camera adjustment path.
+**Why this matters:** Even when debug output is suppressed, building log payloads on every token move or every debounced pan costs allocations and work on the main thread.
 
 **Recommendation / Status:**
-- Remove or heavily reduce “per token” logs (`Token bounding box contribution`, `_shouldPan()` off-screen messages, and viewport fill zoom calculation logging).
-- Implemented by removing those heavy hot-path debug payload allocations.
+- Prefer no debug plumbing on paths tied to `updateToken`, `canvasPan`, or socket apply; use one-shot init logs or errors only where needed.
+- **Done** for Rank 4 scope above.
 
 ---
 
@@ -176,7 +175,7 @@ This is especially costly because auto-fit zoom and bounding boxes happen during
 
 1. Add missing `disposeByContext('broadcast-windows')` in `cleanup()`. (done)
 2. Track/clear all delayed initialization `setTimeout`s via `_trackedSetTimeout`. (done)
-3. Reduce/remove per-token debug payload allocations in `_calculateTokenBoundingBox()` and related hot paths. (done)
+3. Reduce/remove debug payload allocations on token move, pan/sync, and spectator/combat camera paths (`updateToken`, `_onTokenUpdate`, viewport sync, etc.). (done)
 4. Cache settings used in hot functions (`_shouldPan`, fillPercent, animation duration, thresholds`). (done — `_hotPathSettings` + `settingChange`)
 5. Cache viewport CSS size for `_shouldPan()` / zoom math (invalidate on resize / pan changes if needed). (done — renderer-keyed cache + `cleanup()` invalidation)
 6. Cache socket readiness promise to avoid repeated `waitForReady()` calls in `canvasPan`-driven paths. (done)
