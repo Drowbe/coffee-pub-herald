@@ -4,6 +4,8 @@ Scope: `coffee-pub-herald` (Foundry VTT v13+) with Blacksmith API usage.
 
 This doc focuses on potential memory leaks, performance hotspots, and incomplete / risky usage patterns around Blacksmith `HookManager` and Blacksmith sockets.
 
+**Status:** The stack-ranked table below is **fully fixed** in current Herald. Later sections record what was at risk, what was implemented, and **optional** follow-ups (not ranked).
+
 ---
 
 ## Current Findings (Stack Ranked)
@@ -22,20 +24,17 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 
 ## High-Risk Memory / Lifecycle Issues
 
-### 1) `broadcast-windows` HookManager context is never disposed
+### 1) `broadcast-windows` HookManager context cleanup **(fixed)**
 **Where:** `scripts/manager-herald.js`
-- Hooks are registered with `context: 'broadcast-windows'` in `_registerBroadcastWindowHooks()`
-- `cleanup()` calls `disposeByContext(...)` for multiple contexts, but **does not include** `'broadcast-windows'`.
+- Hooks are registered with `context: 'broadcast-windows'` in `_registerBroadcastWindowHooks()`.
 
-**Why this matters:** If the module is unloaded/disabled and re-enabled in the same browser session, those hooks can survive longer than expected and keep references alive, causing duplicated behavior and gradual memory growth.
+**Was at risk:** If `'broadcast-windows'` were omitted from `cleanup()`, hooks could survive a reload/re-enable and duplicate behavior.
 
-**Recommendation / Status:**
-- Add `this._blacksmith?.HookManager?.disposeByContext('broadcast-windows')` in `cleanup()` and reset `_broadcastWindowHooksRegistered` after cleanup.
-- Implemented (see `cleanup()` changes in `scripts/manager-herald.js`).
+**Status:** `cleanup()` calls `HookManager.disposeByContext('broadcast-windows')` together with the other Herald contexts, and clears **`_broadcastWindowHooksRegistered`** so window hooks can register again on re-init.
 
 ---
 
-### 2) Pending `setTimeout` calls are not fully tracked/cleared
+### 2) Pending `setTimeout` calls **(fixed)**
 **Where:** `scripts/manager-herald.js`
 - There are many `setTimeout(...)` calls used for initialization and follow-up work.
 - **Fixed:** All Herald-owned timers go through `_trackedSetTimeout` (single internal `setTimeout` wrapper). Debounced work (`_gmDebounce`, `_playerButtonsDebounce`, `_playerDebounces`) uses `_trackedSetTimeout` plus `_trackedClearTimeout` when cancelling/rescheduling so `_timeoutIds` stays consistent.
@@ -49,23 +48,21 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 
 ---
 
-### 3) Socket handler cleanup is not explicit (may be fine, but currently undocumented here)
+### 3) Socket handler cleanup via Blacksmith **(documented; confirm upstream)**
 **Where:** `scripts/manager-herald.js`
-- Socket handlers are registered via `blacksmith.sockets.register(...)`.
-- `cleanup()` clears `_socketHandlerNames`, but explicitly notes that internal socket handler cleanup isn’t accessible.
+- Handlers are registered with `blacksmith.sockets.register(...)`. `cleanup()` clears **`_socketHandlerNames`** and includes an inline comment that internal handler storage is not exposed for explicit unregister.
 
-**Why this matters:** If Blacksmith does not automatically unregister handlers on module unload (or if unload doesn’t trigger full teardown), handlers could accumulate.
+**Why this matters:** If Blacksmith did not drop external handlers on module unload, duplicates could accumulate across reloads.
 
-**Recommendation:**
-- Confirm Blacksmith’s socket lifecycle behavior on module unload.
-- If the socket API provides an unregister/return value (or a dispose-by-context equivalent), adopt it.
-- Otherwise, add a short comment in code/doc clarifying that Blacksmith auto-cleans handlers on unload.
+**Recommendation / Status:**
+- **Done in Herald:** Comment in `cleanup()` explains the limitation and that names are tracked for possible future API use.
+- **Open:** Confirm with Blacksmith maintainers that external `register` handlers are released on module unload; if an unregister API exists, prefer using it.
 
 ---
 
 ## Performance Hotspots
 
-### 1) Excessive debug logging on camera hot paths
+### 1) Debug logging on camera hot paths **(fixed — Rank 4)**
 **Where:** `scripts/manager-herald.js`
 - **Fixed:** Removed `postConsoleAndNotification(..., true, ...)` (and large inline `result` objects) from:
   - `updateToken` / `createToken` HookManager callbacks
@@ -84,7 +81,7 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 
 ---
 
-### 2) Bounding-box calculations are re-run frequently and expensively
+### 2) Bounding-box / follow-path cost **(mitigated)**
 **Where:** `scripts/manager-herald.js`
 - `_onTokenUpdate()` and `_onCombatantTokensUpdate()` compute:
   - visible tokens list
@@ -95,32 +92,28 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 **Why this matters:** During active scenes (many tokens), any missed throttling means lots of math + garbage creation.
 
 **Recommendation / Status:**
-- Compute should-pan first and only compute zoom/bounding-box if needed.
-- **Partial:** `_getViewportCssSize()` is cached (invalidated when renderer width/height/resolution change; cleared in `cleanup()`). Hot-path settings (`distanceThreshold`, `throttleMs`, fill percents, animation duration) use `_hotPathSettings` refreshed on init and `settingChange`.
-- **Rank 7 (done):** `_getVisiblePartyTokens` / `_getVisibleCombatTokens` / `_getAllVisibleCanvasTokens` cache sorted token ids per scene (and combat roster key / placeables + visible count for spectator); on pure `x`/`y`/`rotation`/etc. moves they **re-resolve by id** in O(k) instead of scanning all placeables. `_calculateAutoFitZoom` caches last result by geometry signature + renderer key + fill percent. Invalidation: `cleanup()`, scene/camera init, `createToken`/`deleteToken`, structural `updateToken` (any change besides position/sort/elevation/rotation), combatant create/update/delete, combat start/end, `broadcastUserId` change, hot-path fill settings.
+- **Done:** `_getViewportCssSize()` is cached (invalidated when renderer width/height/resolution change; cleared in `cleanup()`). Hot-path settings use **`_hotPathSettings`** refreshed on init and `settingChange`.
+- **Rank 7 (done):** `_getVisiblePartyTokens` / `_getVisibleCombatTokens` / `_getAllVisibleCanvasTokens` cache sorted token ids per scene (and combat roster key / placeables + visible count for spectator); on pure `x`/`y`/`rotation`/etc. moves they **re-resolve by id** in O(k) instead of scanning all placeables. `_calculateAutoFitZoom` caches the last result by geometry signature + renderer key + fill percent. Invalidation: `cleanup()`, scene/camera init, `createToken`/`deleteToken`, structural `updateToken` (any change besides position/sort/elevation/rotation), combatant create/update/delete, combat start/end, `broadcastUserId` change, hot-path fill settings.
+- **Optional later:** Skip bbox/auto-fit when pan/zoom is already ruled out (easy to get wrong; only if profiling warrants it).
 
 ---
 
-### 3) Settings lookups on hot paths
+### 3) Settings lookups on hot paths **(fixed)**
 **Where:** `scripts/manager-herald.js`
 - **Fixed:** `_shouldPan()`, party/combatant/token-spectator follow, combat framing, follow mode, map view, GM/player viewport apply use **`_hotPathSettings`** (populated by `_refreshHotPathSettingsCache()` on init and when any of `broadcastFollowDistanceThreshold`, `broadcastFollowThrottleMs`, `broadcastAnimationDuration`, `broadcastSpectatorPartyBoxFill`, `broadcastCombatViewFill`, or `broadcastFollowViewFill` changes — see `broadcast-settings` HookManager hook).
 
 ---
 
-### 4) Token lists are recomputed on every update
-**Where:**
-- `_getVisiblePartyTokens()` uses `canvas.tokens.placeables.filter(...)` and visibility checks.
-- `_getVisibleCombatTokens()` loops through all combatants and then visibility checks.
-- `_getAllVisibleCanvasTokens()` filters `canvas.tokens.placeables` each time.
+### 4) Token list scans on camera follow **(fixed — Rank 7)**
+**Where:** `scripts/manager-herald.js` — `_getVisiblePartyTokens()`, `_getVisibleCombatTokens()`, `_getAllVisibleCanvasTokens()`.
 
-**Why this matters:** Each “camera follow” call rebuilds arrays and iterates potentially large lists.
+**Was at risk:** Every follow tick could scan all `placeables` / all combatants.
 
-**Recommendation / Status:**
-- **Fixed (Rank 7):** Cached id lists + verification (see §2 above); Token Spectator uses `placeablesCount` + `visibleCount` so new visible tokens invalidate correctly.
+**Status:** Cached **sorted token ids** + cheap re-verification (see **§2**). Token Spectator also stores **`placeablesCount`** and **`visibleCount`** so the visible set cannot go stale when visibility toggles without a placeable count change.
 
 ---
 
-### 5) Menubar full `renderMenubar` churn
+### 5) Menubar `renderMenubar` churn **(fixed)**
 **Where:** `scripts/manager-herald.js`
 - `_setBroadcastMode()` used to call `renderMenubar(true)` while the `broadcast-mode-buttons` `settingChange` hook also rendered after the same `game.settings.set('broadcastMode', ...)`.
 - Context menu mode picks, combat begin/end, and enable-toggle duplicated secondary-bar active updates + extra renders.
@@ -132,37 +125,26 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 
 ## Blacksmith API Usage Notes (HookManager / Sockets)
 
-### 1) HookManager usage is mostly correct, but cleanup gaps exist
+### 1) HookManager contexts and `cleanup()` **(fixed)**
 **Where:** `scripts/manager-herald.js`
-- Most hook registrations include `context: ...`
-- `cleanup()` disposes several contexts, but misses `broadcast-windows`.
 
-**Recommendation:** dispose the full set of contexts registered in `_registerHooks()` and subordinate `_register*()` functions.
+**Status:** Registrations use `context: ...` per feature area. `cleanup()` calls **`disposeByContext`** for all Herald contexts, including **`broadcast-windows`**, **`broadcast-camera`**, **`broadcast-camera-init`**, **`broadcast-settings`**, **`broadcast-gmview-sync`**, **`broadcast-mode-buttons`**, **`broadcast-playerview-sync`**, **`broadcast-player-buttons`**, and **`broadcast-cleanup`**.
 
 ---
 
-### 2) Socket readiness is awaited repeatedly in hot paths (likely expensive)
-**Where:** `scripts/manager-herald.js`
-- `_sendGMViewportSync()` calls `await blacksmith.sockets.waitForReady()` on every send.
-- `_sendPlayerViewportSync()` has the same pattern.
+### 2) Socket readiness on hot paths **(fixed)**
+**Where:** `scripts/manager-herald.js` — `_sendGMViewportSync()`, `_sendPlayerViewportSync()`, and other emit paths use **`_waitForSocketsReady()`**.
 
-**Why this matters:** `canvasPan` can fire frequently; even a small overhead repeated many times adds up.
-
-**Recommendation:**
-- Create a cached readiness promise (e.g., `this._socketsReadyPromise ||= blacksmith.sockets.waitForReady()`) after initialization.
-- Then await that promise in hot send paths instead of calling `waitForReady()` each time.
+**Status:** A single cached promise **`_socketsReadyPromise`** is assigned from `sockets.waitForReady()` on first use and awaited thereafter. **`cleanup()`** sets **`_socketsReadyPromise = null`** so a re-enabled module obtains a fresh readiness promise.
 
 ---
 
-### 3) Potential overlap / queueing of `canvas.animatePan` calls
-**Where:** multiple camera adjustment methods call `await canvas.animatePan(...)`.
+### 3) Potential overlap / queueing of `canvas.animatePan` calls **(optional)**
+**Where:** Multiple camera paths call `await canvas.animatePan(...)`.
 
-**Why this matters:** If events arrive faster than animation duration, you may end up with overlapping animations or queue behavior (depending on Foundry’s implementation).
+**Why this matters:** If events arrive faster than animation duration, behavior depends on Foundry’s internal queuing.
 
-**Recommendation:**
-- Track an “animation in flight” state and either:
-  - ignore intermediate calls while one is running, or
-  - coalesce multiple requests into the latest target (debounce cameraman viewport apply).
+**Recommendation (not implemented):** Track “animation in flight” or coalesce/debounce cameraman viewport updates.
 
 ---
 
@@ -177,3 +159,4 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 7. Debounce / dedupe menubar `renderMenubar` (remove double-render from `_setBroadcastMode` + setting hook; debounce noisy user connect paths). (done — `_requestMenubarRender`)
 8. Cache visible token id lists + `_calculateAutoFitZoom` for follow paths (invalidate on structural token/combat/scene changes). (done — Rank 7)
 
+**Optional (not checklist items):** Confirm Blacksmith socket unregister semantics (High-Risk §3); consider `animatePan` coalescing (Blacksmith API §3).
