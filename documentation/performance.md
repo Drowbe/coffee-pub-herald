@@ -16,7 +16,7 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 | 4 | Medium | Hot-path per-token debug payload allocations | Fixed |
 | 5 | Medium | Menubar full rerenders on frequent update paths | Fixed |
 | 6 | Medium | Repeated settings lookups in hot camera paths | Fixed |
-| 7 | Low | Token list/bounding box recomputation opportunities | Active |
+| 7 | Low | Token list/bounding box recomputation opportunities | Fixed |
 
 ---
 
@@ -97,7 +97,7 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 **Recommendation / Status:**
 - Compute should-pan first and only compute zoom/bounding-box if needed.
 - **Partial:** `_getViewportCssSize()` is cached (invalidated when renderer width/height/resolution change; cleared in `cleanup()`). Hot-path settings (`distanceThreshold`, `throttleMs`, fill percents, animation duration) use `_hotPathSettings` refreshed on init and `settingChange`.
-- **Still open:** Per-frame token list / bounding-box result caching (invalidate on move, scene, combat).
+- **Rank 7 (done):** `_getVisiblePartyTokens` / `_getVisibleCombatTokens` / `_getAllVisibleCanvasTokens` cache sorted token ids per scene (and combat roster key / placeables + visible count for spectator); on pure `x`/`y`/`rotation`/etc. moves they **re-resolve by id** in O(k) instead of scanning all placeables. `_calculateAutoFitZoom` caches last result by geometry signature + renderer key + fill percent. Invalidation: `cleanup()`, scene/camera init, `createToken`/`deleteToken`, structural `updateToken` (any change besides position/sort/elevation/rotation), combatant create/update/delete, combat start/end, `broadcastUserId` change, hot-path fill settings.
 
 ---
 
@@ -115,13 +115,8 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 
 **Why this matters:** Each “camera follow” call rebuilds arrays and iterates potentially large lists.
 
-**Recommendation:**
-- Avoid recomputation when the underlying token set hasn’t changed (e.g., if `changes` doesn’t include position/state changes and you aren’t forcing pan).
-- Consider caching the last token arrays and only rebuilding when:
-  - tokenMoved is true
-  - canvas scene changes
-  - combat changes
-  - Token Spectator target set changes
+**Recommendation / Status:**
+- **Fixed (Rank 7):** Cached id lists + verification (see §2 above); Token Spectator uses `placeablesCount` + `visibleCount` so new visible tokens invalidate correctly.
 
 ---
 
@@ -180,4 +175,5 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 5. Cache viewport CSS size for `_shouldPan()` / zoom math (invalidate on resize / pan changes if needed). (done — renderer-keyed cache + `cleanup()` invalidation)
 6. Cache socket readiness promise to avoid repeated `waitForReady()` calls in `canvasPan`-driven paths. (done)
 7. Debounce / dedupe menubar `renderMenubar` (remove double-render from `_setBroadcastMode` + setting hook; debounce noisy user connect paths). (done — `_requestMenubarRender`)
+8. Cache visible token id lists + `_calculateAutoFitZoom` for follow paths (invalidate on structural token/combat/scene changes). (done — Rank 7)
 

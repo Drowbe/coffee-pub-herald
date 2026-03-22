@@ -65,6 +65,16 @@ export class HeraldManager {
     /** `{ width, height, rkey }` — invalidated when PIXI renderer width/height/resolution change. */
     static _viewportCssCache = null;
 
+    /**
+     * Rank 7: Rebuild visible token lists from cached ids (O party size) instead of scanning all placeables
+     * when membership/visibility is unchanged. Invalidated on scene/combat/structural token changes.
+     */
+    static _partyTokensCache = null;
+    static _combatTokensCache = null;
+    static _allCanvasTokensCache = null;
+    /** Last `_calculateAutoFitZoom` result: `{ sig, fillPercent, zoom }` */
+    static _autoFitZoomCache = null;
+
     /** Debounced `renderMenubar(false)` id from `_requestMenubarRender` (tracked timeout). */
     static _menubarRenderDebounceId = null;
 
@@ -147,6 +157,7 @@ this._blacksmith.HookManager.registerHook({
                 
                 if (moduleId === MODULE.ID && this._HOT_PATH_SETTING_KEYS.has(settingKey)) {
                     this._refreshHotPathSettingsCache();
+                    this._invalidateAutoFitZoomCache();
                 }
 
                 if (moduleId === MODULE.ID && settingKey === 'broadcastShowCombatBar') {
@@ -164,6 +175,9 @@ this._blacksmith.HookManager.registerHook({
                     settingKey === 'broadcastShowCombatBar' ||
                     settingKey === 'broadcastBarHeight'
                 )) {
+                    if (settingKey === 'broadcastUserId') {
+                        this._invalidateVisibleTokenListCaches();
+                    }
                     this._updateBroadcastMode();
                     if (settingKey === 'broadcastBarHeight') this._applyBroadcastBarHeightCss();
                     // Re-render menubar to update view mode button visibility
@@ -219,6 +233,7 @@ this._blacksmith.HookManager.registerHook({
     static _registerCameraHooks() {
         // Helper function to initialize camera on scene load
         const initializeCamera = async () => {
+            this._invalidateVisibleTokenListCaches();
             // Only process for broadcast user (for spectator/combat modes)
             // For GM view mode, GM client initializes monitoring separately
             if (!this._isBroadcastUser()) {
@@ -303,6 +318,10 @@ this._blacksmith.HookManager.registerHook({
             callback: async (tokenDocument, changes, options, userId) => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                 
+                if (tokenDocument && this._tokenChangesMayChangeVisibleMembership(changes)) {
+                    this._invalidateVisibleTokenListCaches();
+                }
+
                 // Only process for broadcast user
                 if (!this._isBroadcastUser()) {
                     return;
@@ -362,6 +381,8 @@ this._blacksmith.HookManager.registerHook({
             callback: async (tokenDocument, options, userId) => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                 
+                this._invalidateVisibleTokenListCaches();
+
                 // Only process for broadcast user
                 if (!this._isBroadcastUser()) {
                     return;
@@ -442,6 +463,7 @@ this._blacksmith.HookManager.registerHook({
         // Hooks for combatant list changes (combatant mode)
         const combatantUpdateHandler = async () => {
             //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
+            this._invalidateVisibleTokenListCaches();
             if (!this._isBroadcastUser()) return;
             if (!this.isEnabled()) return;
             if (getSettingSafely(MODULE.ID, 'broadcastMode', 'spectator') !== 'combat') return;
@@ -503,6 +525,7 @@ this._blacksmith.HookManager.registerHook({
             context: 'broadcast-camera',
             priority: 3,
             callback: async (combat, updateData) => {
+                this._invalidateVisibleTokenListCaches();
                 if (!this.isEnabled()) return;
                 const mode = getSettingSafely(MODULE.ID, 'broadcastCombatBeginMode', 'combatant');
                 if (mode === 'no-change') return;
@@ -517,6 +540,7 @@ this._blacksmith.HookManager.registerHook({
             context: 'broadcast-camera',
             priority: 3,
             callback: async (combat, options, userId) => {
+                this._invalidateVisibleTokenListCaches();
                 if (!this.isEnabled()) return;
                 const mode = getSettingSafely(MODULE.ID, 'broadcastCombatEndMode', 'spectator');
                 if (mode === 'no-change') return;
@@ -1510,28 +1534,51 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Count visible placeables for the broadcast user (O(N); used to validate Token Spectator cache).
+     */
+    static _countVisiblePlaceablesForBroadcastUser(broadcastUser) {
+        if (!canvas?.tokens?.placeables) return 0;
+        let n = 0;
+        for (const token of canvas.tokens.placeables) {
+            if (this._isTokenVisibleToBroadcastUser(token, broadcastUser)) n++;
+        }
+        return n;
+    }
+
+    /**
      * Get all party tokens visible to the broadcast user
      * @returns {Array} Array of visible party token placeables
      */
     static _getVisiblePartyTokens() {
         if (!canvas || !canvas.tokens) return [];
-        
+
         const broadcastUser = this._getBroadcastUser();
         if (!broadcastUser) return [];
-        
-        return canvas.tokens.placeables.filter(token => {
-            const actor = token.actor;
-            // Must be player character
-            if (!actor || actor.type !== 'character' || !actor.hasPlayerOwner) {
-                return false;
+
+        const sceneId = canvas.scene?.id;
+        if (!sceneId) return [];
+
+        const cache = this._partyTokensCache;
+        if (cache && cache.sceneId === sceneId && cache.userId === broadcastUser.id && cache.tokenIds?.length) {
+            const out = [];
+            let ok = true;
+            for (const id of cache.tokenIds) {
+                const token = canvas.tokens.get(id);
+                if (!token || !this._isPartyTokenForBroadcastUser(token, broadcastUser)) {
+                    ok = false;
+                    break;
+                }
+                out.push(token);
             }
-            // Must be visible to broadcast user
-            if (token.document?.testUserVisibility) {
-                return token.document.testUserVisibility(broadcastUser);
+            if (ok && out.length === cache.tokenIds.length) {
+                return out;
             }
-            // Fallback: check if token is visible on canvas
-            return token.visible;
-        });
+        }
+
+        const tokens = canvas.tokens.placeables.filter((token) => this._isPartyTokenForBroadcastUser(token, broadcastUser));
+        const tokenIds = tokens.map((t) => t.id).sort();
+        this._partyTokensCache = { sceneId, userId: broadcastUser.id, tokenIds };
+        return tokens;
     }
 
     /**
@@ -1539,12 +1586,39 @@ this._blacksmith.HookManager.registerHook({
      * @returns {Array} Array of visible combatant token placeables
      */
     static _getVisibleCombatTokens() {
-        if (!canvas || !canvas.tokens) return [];
+        if (!canvas?.tokens) return [];
         const combat = game.combat;
         if (!combat?.combatants?.size) return [];
 
         const broadcastUser = this._getBroadcastUser();
         if (!broadcastUser) return [];
+
+        const sceneId = canvas.scene?.id;
+        if (!sceneId) return [];
+
+        const rosterKey = this._combatRosterKey(combat);
+        const cache = this._combatTokensCache;
+        if (
+            cache
+            && cache.sceneId === sceneId
+            && cache.userId === broadcastUser.id
+            && cache.rosterKey === rosterKey
+            && cache.tokenIds?.length
+        ) {
+            const out = [];
+            let ok = true;
+            for (const id of cache.tokenIds) {
+                const token = canvas.tokens.get(id);
+                if (!token || !this._isTokenVisibleToBroadcastUser(token, broadcastUser)) {
+                    ok = false;
+                    break;
+                }
+                out.push(token);
+            }
+            if (ok && out.length === cache.tokenIds.length) {
+                return out;
+            }
+        }
 
         const tokens = [];
         for (const combatant of combat.combatants) {
@@ -1564,6 +1638,8 @@ this._blacksmith.HookManager.registerHook({
             tokens.push(token);
         }
 
+        const tokenIds = tokens.map((t) => t.id).sort();
+        this._combatTokensCache = { sceneId, userId: broadcastUser.id, rosterKey, tokenIds };
         return tokens;
     }
 
@@ -1576,12 +1652,47 @@ this._blacksmith.HookManager.registerHook({
         const broadcastUser = this._getBroadcastUser();
         if (!broadcastUser) return [];
 
-        return canvas.tokens.placeables.filter((token) => {
-            if (token.document?.testUserVisibility) {
-                return token.document.testUserVisibility(broadcastUser);
+        const sceneId = canvas.scene?.id;
+        if (!sceneId) return [];
+
+        const placeablesCount = canvas.tokens.placeables.length;
+        const cache = this._allCanvasTokensCache;
+        if (
+            cache
+            && cache.sceneId === sceneId
+            && cache.userId === broadcastUser.id
+            && cache.placeablesCount === placeablesCount
+            && cache.tokenIds?.length
+        ) {
+            const visibleCount = this._countVisiblePlaceablesForBroadcastUser(broadcastUser);
+            if (visibleCount === cache.visibleCount) {
+                const out = [];
+                let ok = true;
+                for (const id of cache.tokenIds) {
+                    const token = canvas.tokens.get(id);
+                    if (!token || !this._isTokenVisibleToBroadcastUser(token, broadcastUser)) {
+                        ok = false;
+                        break;
+                    }
+                    out.push(token);
+                }
+                if (ok && out.length === cache.tokenIds.length) {
+                    return out;
+                }
             }
-            return token.visible;
-        });
+        }
+
+        const tokens = canvas.tokens.placeables.filter((token) => this._isTokenVisibleToBroadcastUser(token, broadcastUser));
+        const tokenIds = tokens.map((t) => t.id).sort();
+        const visibleCount = tokens.length;
+        this._allCanvasTokensCache = {
+            sceneId,
+            userId: broadcastUser.id,
+            placeablesCount,
+            visibleCount,
+            tokenIds
+        };
+        return tokens;
     }
 
     /**
@@ -1900,6 +2011,74 @@ this._blacksmith.HookManager.registerHook({
         this._viewportCssCache = null;
     }
 
+    /** Clear cached visible token lists and auto-fit zoom (scene/combat/membership changes). */
+    static _invalidateVisibleTokenListCaches() {
+        this._partyTokensCache = null;
+        this._combatTokensCache = null;
+        this._allCanvasTokensCache = null;
+        this._autoFitZoomCache = null;
+    }
+
+    static _invalidateAutoFitZoomCache() {
+        this._autoFitZoomCache = null;
+    }
+
+    /**
+     * True if token update may change which tokens are visible / party membership (not pure move).
+     * @param {object} [changes] - `updateToken` changes object
+     */
+    static _tokenChangesMayChangeVisibleMembership(changes) {
+        if (!changes || typeof changes !== 'object') return false;
+        for (const k of Object.keys(changes)) {
+            if (k === 'x' || k === 'y' || k === 'elevation' || k === 'sort' || k === 'rotation') continue;
+            return true;
+        }
+        return false;
+    }
+
+    /** Sorted combat token document ids on the active canvas scene (roster signature). */
+    static _combatRosterKey(combat) {
+        if (!combat?.combatants) return '';
+        const sceneId = canvas?.scene?.id;
+        const ids = [];
+        for (const c of combat.combatants) {
+            const td = c?.token;
+            if (!td) continue;
+            if (td.scene?.id && sceneId && td.scene.id !== sceneId) continue;
+            ids.push(td.id);
+        }
+        ids.sort();
+        return ids.join(',');
+    }
+
+    static _isPartyTokenForBroadcastUser(token, broadcastUser) {
+        const actor = token.actor;
+        if (!actor || actor.type !== 'character' || !actor.hasPlayerOwner) return false;
+        if (token.document?.testUserVisibility) {
+            return !!token.document.testUserVisibility(broadcastUser);
+        }
+        return token.visible;
+    }
+
+    static _isTokenVisibleToBroadcastUser(token, broadcastUser) {
+        if (token.document?.testUserVisibility) {
+            return !!token.document.testUserVisibility(broadcastUser);
+        }
+        return token.visible;
+    }
+
+    /** Geometry signature for bbox / auto-fit zoom caching (shallow copies with overridden x/y OK). */
+    static _tokenGeometrySignature(tokens) {
+        if (!tokens?.length) return '';
+        return tokens.map((t) => {
+            const tw = t.document?.width ?? t.width ?? 1;
+            const th = t.document?.height ?? t.height ?? 1;
+            const sx = t.texture?.scaleX ?? 1;
+            const sy = t.texture?.scaleY ?? 1;
+            return `${t.id}:${t.x}:${t.y}:${tw}:${th}:${sx}:${sy}`;
+        }).join('|');
+    }
+
     /**
      * Get viewport size in CSS pixels (independent of renderer DPR).
      * Cached while PIXI renderer dimensions/resolution are unchanged (avoids repeated `getBoundingClientRect` in one pan/zoom evaluation).
@@ -1976,12 +2155,26 @@ this._blacksmith.HookManager.registerHook({
      */
     static _calculateAutoFitZoom(tokens, fillPercent) {
         if (!tokens || tokens.length === 0) return null;
-        
-        // Calculate bounding box
+
+        const renderer = canvas?.app?.renderer;
+        const vk = renderer?.width && renderer?.height
+            ? `${renderer.width}|${renderer.height}|${renderer.resolution ?? 1}`
+            : 'nor';
+        const geomSig = this._tokenGeometrySignature(tokens);
+        const sig = `${geomSig}@@${vk}`;
+        const c = this._autoFitZoomCache;
+        if (c && c.sig === sig && c.fillPercent === fillPercent) {
+            return c.zoom;
+        }
+
         const bbox = this._calculateTokenBoundingBox(tokens);
-        if (!bbox || bbox.width <= 0 || bbox.height <= 0) return null;
-        
-        return this._calculateViewportFillZoom(bbox.width, bbox.height, fillPercent);
+        if (!bbox || bbox.width <= 0 || bbox.height <= 0) {
+            return null;
+        }
+
+        const zoom = this._calculateViewportFillZoom(bbox.width, bbox.height, fillPercent);
+        this._autoFitZoomCache = { sig, fillPercent, zoom };
+        return zoom;
     }
 
     /**
@@ -3653,6 +3846,7 @@ this._blacksmith.HookManager.registerHook({
         // Reset cached socket readiness (module reload / re-enable should recreate it)
         this._socketsReadyPromise = null;
         this._invalidateViewportCssCache();
+        this._invalidateVisibleTokenListCaches();
         this._combatBarVisibilityOverride = null;
 
         // Clear debounced timers (tracked in `_timeoutIds`); null refs so callbacks cannot run stale logic

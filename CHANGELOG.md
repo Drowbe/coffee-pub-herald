@@ -21,7 +21,8 @@ Performance, lifecycle, menubar churn, clearer View Mode status when the cameram
 - **Default fill literals**: Party/token spectator and combat view fill fallbacks in code aligned with `settings.js` (e.g. 70% / 35%).
 - **Menubar / secondary bar churn**: Fewer duplicate `renderMenubar` calls; debounced menubar refresh on `userConnected` / `userDisconnected` and after portrait/follow bar sync; redundant bar updates removed from context menu mode picks and combat begin/end where `_setBroadcastMode` drives state.
 - **View Mode menubar title/tooltip**: Shows the live mode name only when **`isBroadcastActive()`** (enabled + broadcast user set + user logged in). If enabled but not active: **No cameraman** vs **Cameraman offline**; if broadcast off, localized disabled strings (`view-mode-title-disabled`, `view-mode-tooltip-disabled`, `view-mode-tooltip-suffix`, etc.) plus new tool strings (`context-tool-toggle-combat-bar`, hint).
-- **`documentation/performance.md`**: Ranks 2, 4, 5, 6 and checklist updated for timers, hot-path debug removal, menubar debouncing, settings/viewport caching.
+- **`documentation/performance.md`**: Ranks 2, 4, 5, 6, 7 and checklist updated for timers, hot-path debug removal, menubar debouncing, settings/viewport caching, token-list / auto-fit caching.
+- **Rank 7 — token list + auto-fit cache**: `_getVisiblePartyTokens`, `_getVisibleCombatTokens`, and `_getAllVisibleCanvasTokens` reuse cached sorted ids when scene/roster/visibility signature matches and re-resolve by id (O(k)); `_calculateAutoFitZoom` caches by geometry + renderer + fill percent. Invalidation on `cleanup()`, camera init, `createToken`/`deleteToken`, non-move `updateToken` changes, combatant/combat lifecycle, `broadcastUserId`, and hot-path fill settings.
 
 ### Fixed
 
@@ -33,7 +34,7 @@ Performance, lifecycle, menubar churn, clearer View Mode status when the cameram
 
 ### Technical
 
-- **`_syncSecondaryBarActiveForBroadcastMode`**, **`_requestMenubarRender`**, **`_trackedClearTimeout`**, **`_HOT_PATH_SETTING_KEYS`**, **`_menubarRenderDebounceId`**, **`_viewportCssCache`**, **`_combatBarVisibilityOverride`**: support the above behavior in `scripts/manager-herald.js`.
+- **`_syncSecondaryBarActiveForBroadcastMode`**, **`_requestMenubarRender`**, **`_trackedClearTimeout`**, **`_HOT_PATH_SETTING_KEYS`**, **`_menubarRenderDebounceId`**, **`_viewportCssCache`**, **`_combatBarVisibilityOverride`**, **`_partyTokensCache`**, **`_combatTokensCache`**, **`_allCanvasTokensCache`**, **`_autoFitZoomCache`**, **`_invalidateVisibleTokenListCaches`**, **`_tokenGeometrySignature`**: support the above behavior in `scripts/manager-herald.js`.
 
 ## [13.0.1] - 2025-03-07
 
