@@ -6,15 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [13.0.4] - 2026-03-31
+
+Blacksmith socket lifecycle clarified for maintainers (authoritative upstream behavior: no `unregister`, no full socket stack teardown on `unloadModule`). Herald code comments and risk docs aligned; runtime behavior of `cleanup()` is unchanged (still clears **`_socketHandlerNames`** only).
+
+### Added
+
+- **`documentation/blacksmith-sockets-unload.md`**: Note on SocketManager / `api.sockets` (no unregister API, handlers persist until full client reload, native `off` used for re-init stacking, not general unload).
+
+### Documentation
+
+- **`documentation/performance.md`**: High-Risk §3 updated from “confirm upstream” to confirmed behavior; Herald guidance and link to **`blacksmith-sockets-unload.md`**; optional checklist line adjusted (socket item moved to upstream doc).
+- **`documentation/blacksmith-apis.md`**: Sockets item documents unload / lack of unregister and links to **`blacksmith-sockets-unload.md`**.
+
+### Technical
+
+- **`scripts/manager-herald.js`** (`cleanup()`): Socket-handler comment replaced with accurate Blacksmith semantics and pointer to **`documentation/blacksmith-sockets-unload.md`** (same **`_socketHandlerNames.clear()`** bookkeeping as before).
+
 ## [13.0.3] - 2026-03-30
 
 ### Fixed
 
 - **Broadcast mode UI after changing view (menubar menu / secondary bar)**: `_setBroadcastMode` now calls **`_syncSecondaryBarActiveForBroadcastMode`**, **`_refreshBroadcastSecondaryBarData`** (`updateSecondaryBar` with live mode + sync timestamp when the broadcast bar is open), and **`_requestMenubarRender(true)`** immediately after persisting `broadcastMode`, so active buttons and View Mode tool match the cameraman without relying only on HookManager `settingChange`. Initial bar sync and the `broadcast-mode-buttons` hook use the same helpers.
-
-### Documentation
-
-- **`documentation/blacksmith-sockets-unload.md`**: Blacksmith-maintainer note on socket teardown, lack of `unregister`, and session-lifetime handlers; **`performance.md`** High-Risk §3 and **`blacksmith-apis.md`** point here; **`cleanup()`** comment aligned.
 
 ## [13.0.2] - 2026-03-07
 
