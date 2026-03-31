@@ -2999,27 +2999,9 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-settings'
             this._setBroadcastMode(fallback); // fire-and-forget; setting will update and sync
             currentMode = fallback;
         }
-        const modeItemMap = {
-            'spectator': 'broadcast-mode-spectator',
-            'combat': 'broadcast-mode-combat',
-            'combatant': 'broadcast-mode-combatant',
-            'tokenspectator': 'broadcast-mode-tokenspectator',
-            'combatspectator': 'broadcast-mode-tokenspectator', // backwards compat: was Combat Spectator, now Token Spectator
-            'gmview': 'broadcast-mode-gmview',
-            'manual': 'broadcast-mode-manual',
-            'mapview': 'broadcast-mode-mapview'
-        };
-        
-        // Check if mode is a playerview mode (playerview-{userId})
-        if (typeof currentMode === 'string' && currentMode.startsWith('playerview-') && currentMode !== 'playerview-follow') {
-            const userId = currentMode.replace('playerview-', '');
-            // Activate the selected player's portrait button in mirror group
-            const activeItemId = `broadcast-mode-player-${userId}`;
-            this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
-        } else {
-            const activeItemId = modeItemMap[currentMode] || 'broadcast-mode-spectator';
-            this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
-        }
+
+        this._syncSecondaryBarActiveForBroadcastMode(currentMode);
+        this._refreshBroadcastSecondaryBarData(currentMode);
 
         // Listen for broadcast mode setting changes to sync button active state and adjust camera
 this._blacksmith.HookManager.registerHook({
@@ -3033,40 +3015,8 @@ this._blacksmith.HookManager.registerHook({
                 
                 if (moduleId === MODULE.ID && settingKey === 'broadcastMode') {
                     this._lastBroadcastMode = value;
-                    
-                    // Update active state to match the setting (switch mode handles deactivating others)
-                    // Check if mode is a playerview mode (playerview-{userId})
-                    if (typeof value === 'string' && value.startsWith('playerview-') && value !== 'playerview-follow') {
-                        const userId = value.replace('playerview-', '');
-                        // Activate the selected player's portrait button in mirror group
-                        const activeItemId = `broadcast-mode-player-${userId}`;
-                        this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
-                        // Clear follow selection for mirror view
-                        const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
-                        if (followTokenId) {
-                            this._blacksmith.updateSecondaryBarItemActive('broadcast', `broadcast-follow-token-${followTokenId}`, false);
-                        }
-                    } else if (value === 'playerview-follow') {
-                        const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
-                        if (followTokenId) {
-                            this._blacksmith.updateSecondaryBarItemActive('broadcast', `broadcast-follow-token-${followTokenId}`, true);
-                        }
-                    } else {
-                        const modeItemMap = {
-                            'spectator': 'broadcast-mode-spectator',
-                            'combat': 'broadcast-mode-combat',
-                            'combatant': 'broadcast-mode-combatant',
-                            'tokenspectator': 'broadcast-mode-tokenspectator',
-                            'combatspectator': 'broadcast-mode-tokenspectator',
-                            'gmview': 'broadcast-mode-gmview',
-                            'manual': 'broadcast-mode-manual',
-                            'mapview': 'broadcast-mode-mapview'
-                        };
-                        const activeItemId = modeItemMap[value] || 'broadcast-mode-spectator';
-                        this._blacksmith.updateSecondaryBarItemActive('broadcast', activeItemId, true);
-                    }
-
-                    // View Mode tool title/tooltip read `_getCachedBroadcastMode()` — refresh menubar once
+                    this._syncSecondaryBarActiveForBroadcastMode(value);
+                    this._refreshBroadcastSecondaryBarData(value);
                     this._requestMenubarRender(true);
 
                     // If GM changes mode, broadcast to other clients immediately
@@ -3520,6 +3470,56 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Update which broadcast secondary bar item is active (mirror / follow / mode buttons).
+     * Must run after `broadcastMode` is persisted so UI matches cameraman view.
+     * @param {string} mode - Current `broadcastMode` value
+     */
+    static _syncSecondaryBarActiveForBroadcastMode(mode) {
+        const api = this._blacksmith;
+        if (!api?.updateSecondaryBarItemActive || typeof mode !== 'string') return;
+
+        if (mode.startsWith('playerview-') && mode !== 'playerview-follow') {
+            const userId = mode.replace('playerview-', '');
+            const activeItemId = `broadcast-mode-player-${userId}`;
+            api.updateSecondaryBarItemActive('broadcast', activeItemId, true);
+            const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
+            if (followTokenId) {
+                api.updateSecondaryBarItemActive('broadcast', `broadcast-follow-token-${followTokenId}`, false);
+            }
+        } else if (mode === 'playerview-follow') {
+            const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
+            if (followTokenId) {
+                api.updateSecondaryBarItemActive('broadcast', `broadcast-follow-token-${followTokenId}`, true);
+            }
+        } else {
+            const modeItemMap = {
+                spectator: 'broadcast-mode-spectator',
+                combat: 'broadcast-mode-combat',
+                combatant: 'broadcast-mode-combatant',
+                tokenspectator: 'broadcast-mode-tokenspectator',
+                combatspectator: 'broadcast-mode-tokenspectator',
+                gmview: 'broadcast-mode-gmview',
+                manual: 'broadcast-mode-manual',
+                mapview: 'broadcast-mode-mapview'
+            };
+            const activeItemId = modeItemMap[mode] || 'broadcast-mode-spectator';
+            api.updateSecondaryBarItemActive('broadcast', activeItemId, true);
+        }
+    }
+
+    /**
+     * Merge live mode into Blacksmith secondary bar `data` and full menubar refresh (when broadcast bar is open).
+     * @param {string} mode - Current `broadcastMode` value
+     */
+    static _refreshBroadcastSecondaryBarData(mode) {
+        if (typeof this._blacksmith?.updateSecondaryBar !== 'function') return;
+        this._blacksmith.updateSecondaryBar({
+            heraldBroadcastMode: mode,
+            _heraldSyncAt: Date.now()
+        });
+    }
+
+    /**
      * Set broadcast mode, emit to clients, and adjust local viewport.
      * @param {string} mode - The new broadcast mode
      * @returns {Promise<boolean>} True if set succeeded
@@ -3529,13 +3529,15 @@ this._blacksmith.HookManager.registerHook({
         try {
             this._lastBroadcastMode = mode;
             await game.settings.set(MODULE.ID, 'broadcastMode', mode);
+            this._syncSecondaryBarActiveForBroadcastMode(mode);
+            this._refreshBroadcastSecondaryBarData(mode);
+            this._requestMenubarRender(true);
             if (game.user.isGM && this._shouldEmitModeChange(mode)) {
                 await this._emitModeChange(mode);
             }
             if (this.isEnabled() && canvas?.ready) {
                 await this._adjustViewportForMode(mode);
             }
-            // Menubar + secondary bar active state: `broadcast-mode-buttons` hook on `broadcastMode`
             return true;
         } catch (error) {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to set broadcast mode", error, true, false);
