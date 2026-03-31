@@ -48,15 +48,12 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 
 ---
 
-### 3) Socket handler cleanup via Blacksmith **(documented; confirm upstream)**
-**Where:** `scripts/manager-herald.js`
-- Handlers are registered with `blacksmith.sockets.register(...)`. `cleanup()` clears **`_socketHandlerNames`** and includes an inline comment that internal handler storage is not exposed for explicit unregister.
+### 3) Socket handler cleanup via Blacksmith **(documented — upstream behavior confirmed)**
+**Where:** `scripts/manager-herald.js` — `blacksmith.sockets.register(...)`; `cleanup()` clears **`_socketHandlerNames`** only.
 
-**Why this matters:** If Blacksmith did not drop external handlers on module unload, duplicates could accumulate across reloads.
+**Blacksmith (authoritative):** `api.sockets` has **no unregister**. SocketManager does **not** hook `unloadModule` / `closeGame` to tear down SocketLib, the generic router, or native `game.socket` listeners as a full “module disabled” lifecycle; native `off` exists for **re-init** stacking, not general unload. **Handlers registered via Blacksmith persist until a full client reload** unless Blacksmith adds unregister + unload teardown.
 
-**Recommendation / Status:**
-- **Done in Herald:** Comment in `cleanup()` explains the limitation and that names are tracked for possible future API use.
-- **Open:** Confirm with Blacksmith maintainers that external `register` handlers are released on module unload; if an unregister API exists, prefer using it.
+**Herald:** Treat socket registrations as **session-lifetime**; use `cleanup()` for Herald-owned hooks/timers/UI. See **`documentation/blacksmith-sockets-unload.md`** for the full note (suitable to paste into a wiki).
 
 ---
 
@@ -159,4 +156,4 @@ This doc focuses on potential memory leaks, performance hotspots, and incomplete
 7. Debounce / dedupe menubar `renderMenubar` (remove double-render from `_setBroadcastMode` + setting hook; debounce noisy user connect paths). (done — `_requestMenubarRender`)
 8. Cache visible token id lists + `_calculateAutoFitZoom` for follow paths (invalidate on structural token/combat/scene changes). (done — Rank 7)
 
-**Optional (not checklist items):** Confirm Blacksmith socket unregister semantics (High-Risk §3); consider `animatePan` coalescing (Blacksmith API §3).
+**Optional (not checklist items):** Consider `animatePan` coalescing (Blacksmith API §3). Socket unregister / unload teardown is **upstream** — see **`documentation/blacksmith-sockets-unload.md`**.

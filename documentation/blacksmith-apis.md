@@ -44,6 +44,7 @@ API Supplement: https://github.com/Drowbe/coffee-pub-blacksmith/wiki/API:-Supple
 
 4. Sockets: use `api.sockets` for sync instead of custom socket globals:
    `api.sockets?.register(eventName, handler)` and `api.sockets?.emit(eventName, data)` (optionally `executeAsGM` for GM-only actions).
+   - **Unload / unregister:** Blacksmith does not expose `unregister` or tear down registered handlers on `unloadModule`; see **`documentation/blacksmith-sockets-unload.md`**.
 
 5. Prefer API surfaces over direct imports:
    use `api.registerToolbarTool`, `api.registerSecondaryBarItem` / `api.registerMenubarTool`, and existing APIs (roll/dialog, pins, chat cards).

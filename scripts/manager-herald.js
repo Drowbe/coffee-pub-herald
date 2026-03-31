@@ -3895,10 +3895,8 @@ this._blacksmith.HookManager.registerHook({
             this._blacksmith.unregisterMenubarVisibilityOverride(MODULE.ID);
         }
 
-        // Unregister socket handlers
-        // Note: Socket handlers are stored in SocketManager._externalEventHandlers which isn't directly accessible
-        // via the API. They will be cleaned up when the module unloads, but we track names for potential future cleanup.
-        // For now, clearing the tracking set is sufficient - handlers will be garbage collected when module context is destroyed.
+        // Socket handlers: Blacksmith has no api.sockets.unregister; handlers persist until full client reload.
+        // See documentation/blacksmith-sockets-unload.md. We only clear our name list for Herald bookkeeping.
         this._socketHandlerNames.clear();
 
         // Clear hook IDs tracking

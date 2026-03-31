@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Broadcast mode UI after changing view (menubar menu / secondary bar)**: `_setBroadcastMode` now calls **`_syncSecondaryBarActiveForBroadcastMode`**, **`_refreshBroadcastSecondaryBarData`** (`updateSecondaryBar` with live mode + sync timestamp when the broadcast bar is open), and **`_requestMenubarRender(true)`** immediately after persisting `broadcastMode`, so active buttons and View Mode tool match the cameraman without relying only on HookManager `settingChange`. Initial bar sync and the `broadcast-mode-buttons` hook use the same helpers.
 
+### Documentation
+
+- **`documentation/blacksmith-sockets-unload.md`**: Blacksmith-maintainer note on socket teardown, lack of `unregister`, and session-lifetime handlers; **`performance.md`** High-Risk §3 and **`blacksmith-apis.md`** point here; **`cleanup()`** comment aligned.
+
 ## [13.0.2] - 2026-03-07
 
 Performance, lifecycle, menubar churn, clearer View Mode status when the cameraman is missing or offline, and a GM tool to toggle the combat bar on the cameraman client.
