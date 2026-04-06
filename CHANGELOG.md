@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [13.0.5] - 2026-04-01
+
+### Fixed
+
+- **`postConsoleAndNotification` on `ready`**: The guard used `typeof BlacksmithUtils !== 'undefined'`, which is still true when **`BlacksmithUtils` is `null`**, so the code accessed **`null.postConsoleAndNotification`** and threw. Resolution now prefers **`HeraldManager._blacksmith?.utils?.postConsoleAndNotification`**, then **`globalThis.BlacksmithUtils?.postConsoleAndNotification`**, with the existing **`console.debug`** fallback when debug logging is on and neither is available.
+
 ## [13.0.4] - 2026-03-31
 
 Blacksmith socket lifecycle clarified for maintainers (authoritative upstream behavior: no `unregister`, no full socket stack teardown on `unloadModule`). Herald code comments and risk docs aligned; runtime behavior of `cleanup()` is unchanged (still clears **`_socketHandlerNames`** only).

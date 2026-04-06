@@ -20,8 +20,11 @@ function matchUserBySetting(user, settingValue) {
 }
 
 function postConsoleAndNotification(strModuleID, message, result, blnDebug, blnNotification) {
-    if (typeof BlacksmithUtils !== 'undefined' && BlacksmithUtils.postConsoleAndNotification) {
-        BlacksmithUtils.postConsoleAndNotification(strModuleID, message, result, blnDebug, blnNotification);
+    const fromApi = HeraldManager._blacksmith?.utils?.postConsoleAndNotification;
+    const fromGlobal = globalThis.BlacksmithUtils?.postConsoleAndNotification;
+    const fn = typeof fromApi === 'function' ? fromApi : typeof fromGlobal === 'function' ? fromGlobal : null;
+    if (fn) {
+        fn(strModuleID, message, result, blnDebug, blnNotification);
     } else if (blnDebug) {
         console.debug(strModuleID, message, result ?? '');
     }
