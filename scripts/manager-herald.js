@@ -81,6 +81,14 @@ export class HeraldManager {
     /** Debounced `renderMenubar(false)` id from `_requestMenubarRender` (tracked timeout). */
     static _menubarRenderDebounceId = null;
 
+    // Cameraman viewport box (GM-only overlay showing what the cameraman client sees).
+    static _cameramanBoxGraphics = null;      // GM: PIXI.Graphics rectangle on canvas.stage
+    static _cameramanBoxLabel = null;         // GM: PIXI.Text label above the box
+    static _lastCameramanViewportState = null;// GM: last received {userId, sceneId, x, y, scale, screenW, screenH}
+    static _cameramanBoxGmPanHandler = null;  // GM: canvasPan handler to keep box crisp during GM pan/zoom
+    static _cameramanBoxPanHandler = null;    // Cameraman: canvasPan handler that reports viewport to GM
+    static _cameramanBoxDebounce = null;      // Cameraman: debounce for viewport reporting
+
     /**
      * Cameraman-only: when non-null, overrides world `broadcastShowCombatBar` for body class until the setting changes.
      * @type {boolean|null}
@@ -186,7 +194,11 @@ this._blacksmith.HookManager.registerHook({
                     // Re-render menubar to update view mode button visibility
                     this._requestMenubarRender(true);
                 }
-                
+
+                // Cameraman viewport box toggle is handled by the setting's `onChange`
+                // (see settings.js -> HeraldManager._onCameramanBoxSettingChanged), which
+                // fires reliably on every client. Not handled here to avoid double execution.
+
                 //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
             }
         });
@@ -553,9 +565,12 @@ this._blacksmith.HookManager.registerHook({
 
         // Register GM view syncing (only if broadcast is enabled and mode is gmview)
         this._registerGMViewSync();
-        
+
         // Register player view syncing (for playerview-{userId} modes)
         this._registerPlayerViewSync();
+
+        // Register cameraman viewport box syncing (GM overlay showing the cameraman's view)
+        this._registerCameramanBoxSync();
     }
 
     /**
@@ -2594,6 +2609,19 @@ this._blacksmith.HookManager.registerHook({
             }
         });
 
+        // Toggle the cameraman viewport box overlay on the GM canvas
+        const cameramanBoxEnabled = this._isCameramanBoxEnabled();
+        core.push({
+            name: game.i18n.localize(cameramanBoxEnabled
+                ? MODULE.ID + '.context-hide-cameraman-box'
+                : MODULE.ID + '.context-show-cameraman-box'),
+            icon: cameramanBoxEnabled ? 'fa-solid fa-square-xmark' : 'fa-solid fa-vector-square',
+            onClick: async () => {
+                if (this._warnIfNotEnabled()) return;
+                await game.settings.set(MODULE.ID, 'broadcastShowCameramanBox', !cameramanBoxEnabled);
+            }
+        });
+
         const zones = { core };
         if (!game.user.isGM || !this.isEnabled()) return zones;
 
@@ -3773,6 +3801,371 @@ this._blacksmith.HookManager.registerHook({
     }
 
     // ==================================================================
+    // ===== CAMERAMAN VIEWPORT BOX =====================================
+    // ==================================================================
+    //
+    // GM-only overlay that draws a rectangle on the GM canvas showing what the
+    // cameraman client currently sees. Data flows cameraman -> GM (the reverse of
+    // gmview mode): the cameraman reports {x, y, scale} plus its screen size and
+    // scene id; the GM converts that to a world-space rectangle and draws it as a
+    // PIXI.Graphics child of canvas.interface (so it pans/zooms with the GM's own view).
+
+    /**
+     * Whether the cameraman viewport box overlay is toggled on (world setting).
+     * @returns {boolean}
+     */
+    static _isCameramanBoxEnabled() {
+        return getSettingSafely(MODULE.ID, 'broadcastShowCameramanBox', false) === true;
+    }
+
+    /**
+     * The PIXI container to draw the overlay into. `canvas.interface` is the idiomatic
+     * world-space overlay layer (same layer Blacksmith uses for token indicators); it
+     * pans/zooms with the scene. Falls back to `canvas.stage`.
+     * @returns {PIXI.Container|null}
+     */
+    static _getCameramanBoxLayer() {
+        return canvas?.interface ?? canvas?.stage ?? null;
+    }
+
+    /**
+     * Register cameraman box socket handlers and scene-change refresh.
+     * - Cameraman receives `broadcast.cameramanBoxState` and starts/stops reporting.
+     * - GM receives `broadcast.cameramanViewportSync` and draws the overlay.
+     */
+    static _registerCameramanBoxSync() {
+        (async () => {
+            try {
+                const blacksmith = game.modules.get('coffee-pub-blacksmith')?.api;
+                if (!blacksmith?.sockets) {
+                    postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Blacksmith sockets API not available for cameraman box", "", true, false);
+                    return;
+                }
+                await blacksmith.sockets.waitForReady();
+
+                // GM -> cameraman: box turned on/off (or a request to (re)send current viewport).
+                const stateHandler = 'broadcast.cameramanBoxState';
+                this._socketHandlerNames.add(stateHandler);
+                await blacksmith.sockets.register(stateHandler, async (data) => {
+                    //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
+                    console.warn('HERALD-BOX | received cameramanBoxState', { data, isBroadcastUser: this._isBroadcastUser(), isEnabled: this.isEnabled() });
+                    if (!this._isBroadcastUser()) return;
+                    if (!this.isEnabled()) return;
+                    if (data?.enabled) {
+                        this._startCameramanBoxReporting();
+                    } else {
+                        this._stopCameramanBoxReporting();
+                    }
+                    //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
+                });
+
+                // Cameraman -> GM: viewport state to draw.
+                const syncHandler = 'broadcast.cameramanViewportSync';
+                this._socketHandlerNames.add(syncHandler);
+                await blacksmith.sockets.register(syncHandler, async (data) => {
+                    //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
+                    console.warn('HERALD-BOX | GM received cameramanViewportSync', { data, isGM: game.user.isGM, boxEnabled: this._isCameramanBoxEnabled(), currentScene: canvas?.scene?.id });
+                    if (!game.user.isGM) return;
+                    if (!this.isEnabled()) return;
+                    if (!this._isCameramanBoxEnabled()) { this._removeCameramanBox(); return; }
+                    if (!data) return;
+                    // Only draw when the cameraman is on the same scene as this GM
+                    if (data.sceneId && canvas?.scene?.id && data.sceneId !== canvas.scene.id) {
+                        this._removeCameramanBox();
+                        return;
+                    }
+                    this._drawCameramanBox(data);
+                    //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
+                });
+
+                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Cameraman box socket handlers registered successfully", "", true, false);
+            } catch (error) {
+                postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to register cameraman box socket handlers", error, true, false);
+            }
+
+            // Initial setup at load if the box is already enabled.
+            if (this._isCameramanBoxEnabled() && this.isEnabled()) {
+                if (this._isBroadcastUser()) this._startCameramanBoxReporting();
+                if (game.user.isGM) this._emitCameramanBoxState(true);
+            }
+        })();
+
+        // On scene change: GM clears/re-requests; cameraman re-sends initial state.
+        this._blacksmith.HookManager.registerHook({
+            name: 'canvasReady',
+            description: 'BroadcastManager: Refresh cameraman viewport box on scene change',
+            context: 'broadcast-cameraman-box',
+            priority: 5,
+            callback: () => {
+                //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
+                if (!this.isEnabled()) return;
+                if (!this._isCameramanBoxEnabled()) return;
+                if (game.user.isGM) {
+                    this._removeCameramanBox();
+                    this._lastCameramanViewportState = null;
+                    // Ask the cameraman to report its viewport for the newly loaded scene.
+                    this._emitCameramanBoxState(true);
+                }
+                if (this._isBroadcastUser()) {
+                    const view = canvas.scene?._viewPosition ?? canvas.pan;
+                    if (view) void this._sendCameramanViewport(view);
+                }
+                //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
+            }
+        });
+    }
+
+    /**
+     * GM only: tell the cameraman whether the box is on (and implicitly request a fresh report).
+     * @param {boolean} enabled
+     */
+    static async _emitCameramanBoxState(enabled) {
+        if (!game.user.isGM) return;
+        try {
+            if (!this._blacksmith?.sockets) { console.warn('HERALD-BOX | emit skipped: no sockets'); return; }
+            await this._waitForSocketsReady();
+            console.warn('HERALD-BOX | GM emitting cameramanBoxState', { enabled: !!enabled });
+            await this._blacksmith.sockets.emit('broadcast.cameramanBoxState', {
+                enabled: !!enabled,
+                requestedBy: game.user.id
+            });
+        } catch (error) {
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to emit cameraman box state", error, true, false);
+        }
+    }
+
+    /**
+     * Reacts to the `broadcastShowCameramanBox` toggle. Called from the setting's
+     * `onChange` (fires reliably on every client for world settings). Runs on all
+     * clients; each acts only on the role that applies to it.
+     * @param {boolean} on
+     */
+    static _onCameramanBoxSettingChanged(on) {
+        console.warn('HERALD-BOX | setting changed', { on, isGM: game.user?.isGM, isBroadcastUser: this._isBroadcastUser() });
+        if (this._isBroadcastUser()) {
+            if (on) this._startCameramanBoxReporting();
+            else this._stopCameramanBoxReporting();
+        }
+        if (game.user?.isGM) {
+            void this._emitCameramanBoxState(on);
+            if (on) {
+                this._lastCameramanViewportState = null;
+            } else {
+                this._removeCameramanBox();
+            }
+        }
+        this._requestMenubarRender(true);
+    }
+
+    /**
+     * Cameraman only: begin reporting viewport changes to the GM (idempotent).
+     */
+    static _startCameramanBoxReporting() {
+        this._stopCameramanBoxReporting();
+
+        if (!this._isBroadcastUser()) return;
+        if (!canvas?.ready) {
+            Hooks.once('canvasReady', () => this._startCameramanBoxReporting());
+            return;
+        }
+
+        this._cameramanBoxPanHandler = (c, position) => {
+            if (!this.isEnabled()) return;
+            if (!this._isCameramanBoxEnabled()) return;
+
+            if (this._cameramanBoxDebounce) this._trackedClearTimeout(this._cameramanBoxDebounce);
+            this._cameramanBoxDebounce = this._trackedSetTimeout(() => {
+                this._cameramanBoxDebounce = null;
+                void this._sendCameramanViewport(position);
+            }, 100);
+        };
+
+        Hooks.on('canvasPan', this._cameramanBoxPanHandler);
+
+        // Send initial state so the GM can draw immediately.
+        const view = canvas.scene?._viewPosition ?? canvas.pan;
+        if (view) void this._sendCameramanViewport(view);
+    }
+
+    /**
+     * Cameraman only: stop reporting viewport changes.
+     */
+    static _stopCameramanBoxReporting() {
+        if (this._cameramanBoxDebounce) {
+            this._trackedClearTimeout(this._cameramanBoxDebounce);
+            this._cameramanBoxDebounce = null;
+        }
+        if (this._cameramanBoxPanHandler) {
+            Hooks.off('canvasPan', this._cameramanBoxPanHandler);
+            this._cameramanBoxPanHandler = null;
+        }
+    }
+
+    /**
+     * Cameraman only: send the current viewport (center coords + screen size + scene id) to the GM.
+     * @param {Object} position - {x, y, scale} center coords from canvasPan (or _viewPosition)
+     */
+    static async _sendCameramanViewport(position) {
+        // NOTE: intentionally does NOT gate on `_isCameramanBoxEnabled()` — the ongoing
+        // canvasPan handler already checks that, and the initial send is triggered by an
+        // explicit GM request, which may arrive before the world setting has synced to
+        // this client. Gating here would drop the first (often only) report.
+        if (!this._isBroadcastUser()) return;
+        if (!this.isEnabled()) return;
+        if (!canvas?.ready) return;
+
+        // Screen size is required because the cameraman's window is usually a different
+        // size/aspect than the GM's, so the visible world rect cannot be derived from
+        // {x, y, scale} alone.
+        const dims = Array.isArray(canvas.screenDimensions) && canvas.screenDimensions.length === 2
+            ? canvas.screenDimensions
+            : [window.innerWidth, window.innerHeight];
+
+        const payload = {
+            userId: game.user.id,
+            sceneId: canvas.scene?.id ?? null,
+            x: position?.x ?? 0,
+            y: position?.y ?? 0,
+            scale: position?.scale ?? canvas.stage?.scale?.x ?? 1,
+            screenW: dims[0],
+            screenH: dims[1]
+        };
+
+        try {
+            if (!this._blacksmith?.sockets) return;
+            await this._waitForSocketsReady();
+            console.warn('HERALD-BOX | cameraman sending viewport ->', payload);
+            await this._blacksmith.sockets.emit('broadcast.cameramanViewportSync', payload);
+        } catch (error) {
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to send cameraman viewport", error, true, false);
+        }
+    }
+
+    /**
+     * GM only: draw/update the cameraman viewport box overlay on canvas.stage.
+     * The rectangle is in world coordinates, so it tracks the GM's own pan/zoom.
+     * Line thickness and label are counter-scaled so they stay a constant screen size.
+     * @param {Object|null} state - Viewport state from the cameraman, or null to redraw from last state
+     */
+    static _drawCameramanBox(state) {
+        if (!game.user.isGM) { console.warn('HERALD-BOX | draw skipped: not GM'); return; }
+        if (!this.isEnabled() || !this._isCameramanBoxEnabled()) { console.warn('HERALD-BOX | draw skipped: disabled/toggle-off'); this._removeCameramanBox(); return; }
+        if (!canvas?.ready) { console.warn('HERALD-BOX | draw skipped: canvas not ready'); return; }
+        if (typeof PIXI === 'undefined') { console.warn('HERALD-BOX | draw skipped: no PIXI'); return; }
+        const layer = this._getCameramanBoxLayer();
+        if (!layer) { console.warn('HERALD-BOX | draw skipped: no layer'); return; }
+
+        if (state) this._lastCameramanViewportState = state;
+        const s = this._lastCameramanViewportState;
+        if (!s || s.x == null || s.y == null || !s.scale || !s.screenW || !s.screenH) {
+            console.warn('HERALD-BOX | draw skipped: incomplete state', s);
+            return;
+        }
+
+        // Visible rectangle in world coordinates.
+        const worldW = s.screenW / s.scale;
+        const worldH = s.screenH / s.scale;
+        const left = s.x - worldW / 2;
+        const top = s.y - worldH / 2;
+
+        const gmScale = canvas.stage?.scale?.x || 1;
+        const lineWidth = Math.max(2, 4 / gmScale); // constant on-screen thickness regardless of GM zoom
+        const color = 0xff9800; // orange
+        console.warn('HERALD-BOX | drawing box', { left, top, worldW, worldH, gmScale, layer: layer?.constructor?.name });
+
+        // (Re)create the graphics if missing, destroyed, or orphaned by a canvas rebuild.
+        if (!this._cameramanBoxGraphics || this._cameramanBoxGraphics.destroyed || this._cameramanBoxGraphics.parent !== layer) {
+            if (this._cameramanBoxGraphics && !this._cameramanBoxGraphics.destroyed) {
+                this._cameramanBoxGraphics.destroy();
+            }
+            this._cameramanBoxGraphics = new PIXI.Graphics();
+            this._cameramanBoxGraphics.eventMode = 'none';
+            layer.addChild(this._cameramanBoxGraphics);
+        }
+        // Ensure the overlay sits on top of other layer children.
+        this._cameramanBoxGraphics.zIndex = 10000;
+        if ('sortableChildren' in layer) layer.sortableChildren = true;
+
+        const g = this._cameramanBoxGraphics;
+        g.clear();
+        g.lineStyle(lineWidth, color, 1);
+        g.beginFill(color, 0.10);
+        g.drawRect(left, top, worldW, worldH);
+        g.endFill();
+
+        // Label just inside the top-left corner (kept inside the box so it is never
+        // clipped off-screen, e.g. in GM View mode where the box hugs the screen edges).
+        if (!this._cameramanBoxLabel || this._cameramanBoxLabel.destroyed || this._cameramanBoxLabel.parent !== layer) {
+            if (this._cameramanBoxLabel && !this._cameramanBoxLabel.destroyed) {
+                this._cameramanBoxLabel.destroy();
+            }
+            this._cameramanBoxLabel = new PIXI.Text('', {
+                fontFamily: 'Signika, sans-serif',
+                fontSize: 24,
+                fill: 0xffffff,
+                stroke: 0x000000,
+                strokeThickness: 4
+            });
+            this._cameramanBoxLabel.eventMode = 'none';
+            layer.addChild(this._cameramanBoxLabel);
+        }
+        this._cameramanBoxLabel.zIndex = 10001;
+        const cameraUser = this._getBroadcastUser();
+        const cameraName = cameraUser?.name || 'Camera';
+        this._cameramanBoxLabel.text = `Camera: ${cameraName}`;
+        this._cameramanBoxLabel.scale.set(1 / gmScale);
+        this._cameramanBoxLabel.position.set(left + (8 / gmScale), top + (8 / gmScale));
+
+        // Keep the overlay crisp while the GM pans/zooms (redraw from last state).
+        this._ensureCameramanBoxGmPanHook();
+    }
+
+    /**
+     * GM only: remove the overlay and its GM pan hook.
+     */
+    static _removeCameramanBox() {
+        if (this._cameramanBoxGraphics) {
+            if (!this._cameramanBoxGraphics.destroyed) {
+                this._cameramanBoxGraphics.parent?.removeChild(this._cameramanBoxGraphics);
+                this._cameramanBoxGraphics.destroy();
+            }
+            this._cameramanBoxGraphics = null;
+        }
+        if (this._cameramanBoxLabel) {
+            if (!this._cameramanBoxLabel.destroyed) {
+                this._cameramanBoxLabel.parent?.removeChild(this._cameramanBoxLabel);
+                this._cameramanBoxLabel.destroy();
+            }
+            this._cameramanBoxLabel = null;
+        }
+        this._removeCameramanBoxGmPanHook();
+    }
+
+    /**
+     * GM only: attach a canvasPan handler that redraws the box (constant thickness/label size).
+     */
+    static _ensureCameramanBoxGmPanHook() {
+        if (this._cameramanBoxGmPanHandler) return;
+        this._cameramanBoxGmPanHandler = () => {
+            if (!game.user.isGM) return;
+            if (!this.isEnabled() || !this._isCameramanBoxEnabled()) return;
+            if (!this._lastCameramanViewportState) return;
+            this._drawCameramanBox(null);
+        };
+        Hooks.on('canvasPan', this._cameramanBoxGmPanHandler);
+    }
+
+    /**
+     * GM only: detach the canvasPan redraw handler.
+     */
+    static _removeCameramanBoxGmPanHook() {
+        if (this._cameramanBoxGmPanHandler) {
+            Hooks.off('canvasPan', this._cameramanBoxGmPanHandler);
+            this._cameramanBoxGmPanHandler = null;
+        }
+    }
+
+    // ==================================================================
     // ===== CLEANUP ====================================================
     // ==================================================================
 
@@ -3848,6 +4241,11 @@ this._blacksmith.HookManager.registerHook({
         this._stopGMViewportMonitoring();
         this._stopAllPlayerViewportMonitoring();
 
+        // Cameraman viewport box: stop reporting (cameraman) and remove overlay (GM)
+        this._stopCameramanBoxReporting();
+        this._removeCameramanBox();
+        this._lastCameramanViewportState = null;
+
         // Reset cached socket readiness (module reload / re-enable should recreate it)
         this._socketsReadyPromise = null;
         this._invalidateViewportCssCache();
@@ -3890,6 +4288,7 @@ this._blacksmith.HookManager.registerHook({
         this._blacksmith?.HookManager?.disposeByContext('broadcast-mode-buttons');
         this._blacksmith?.HookManager?.disposeByContext('broadcast-playerview-sync');
         this._blacksmith?.HookManager?.disposeByContext('broadcast-player-buttons');
+        this._blacksmith?.HookManager?.disposeByContext('broadcast-cameraman-box');
         this._blacksmith?.HookManager?.disposeByContext('broadcast-windows');
         this._blacksmith?.HookManager?.disposeByContext('broadcast-cleanup');
 

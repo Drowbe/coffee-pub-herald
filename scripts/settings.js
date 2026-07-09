@@ -3,6 +3,7 @@
 // ==================================================================
 
 import { MODULE } from './const.js';
+import { HeraldManager } from './manager-herald.js';
 
 const WORKFLOW_GROUP = 'run-the-game';
 
@@ -171,6 +172,26 @@ export function registerSettings() {
         default: 60,
         range: { min: 36, max: 120, step: 2 },
         group: WORKFLOW_GROUP
+    });
+
+    // World scope (not client): the cameraman client must be able to read this to know
+    // whether to report its viewport to the GM. Handled live, no reload required.
+    game.settings.register(MODULE.ID, 'broadcastShowCameramanBox', {
+        name: MODULE.ID + '.broadcastShowCameramanBox-Label',
+        hint: MODULE.ID + '.broadcastShowCameramanBox-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: Boolean,
+        default: false,
+        group: WORKFLOW_GROUP,
+        // Foundry fires onChange on every client for world settings — reliable trigger
+        // for both the GM (draw overlay) and the cameraman (report viewport).
+        onChange: (value) => {
+            try {
+                HeraldManager._onCameramanBoxSettingChanged(value === true || value === 'true');
+            } catch (_) { /* manager may not be initialized yet */ }
+        }
     });
 
     registerHeader('broadcastModeConfiguration', 'headingH3BroadcastModeConfiguration-Label', 'headingH3BroadcastModeConfiguration-Hint', 'H3');
