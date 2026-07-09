@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Cameraman viewport box (GM overlay)**: A GM-only box drawn on the canvas showing what the cameraman client currently sees. Toggle it from the **View Mode menu** (left-click the view-mode menubar tool) or the new **Show Cameraman Viewport Box** module setting. The cameraman reports its viewport center, zoom, screen size, and scene id back to the GM over the Blacksmith socket; the GM converts that to a world-space rectangle drawn on `canvas.interface` so it pans/zooms with the GM's own view. The box only appears while the GM and cameraman are on the same scene, and its border/label stay a constant on-screen size regardless of GM zoom.
+- **Cameraman viewport box (GM overlay)**: A GM-only box drawn on the canvas showing what the cameraman client currently sees. Toggle it from the **View Mode menu** (left-click the view-mode menubar tool) or the new **Show Cameraman Viewport Box** module setting. The cameraman reports its viewport center, zoom, screen size, and scene id back to the GM over the Blacksmith socket; the GM converts that to a world-space rectangle drawn on `canvas.interface` so it pans/zooms with the GM's own view. The box only appears while the GM and cameraman are on the same scene, and its border/label stay a constant on-screen size regardless of GM zoom. The label in the box's top-left corner shows the current broadcast view mode.
   - New world setting: **`broadcastShowCameramanBox`** (default off, no reload).
   - New sockets: **`broadcast.cameramanBoxState`** (GM → cameraman: start/stop reporting) and **`broadcast.cameramanViewportSync`** (cameraman → GM: viewport state).
 

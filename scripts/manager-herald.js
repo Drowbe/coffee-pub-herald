@@ -3132,29 +3132,16 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                 if (!this.isEnabled()) {
                     return game.i18n.localize(MODULE.ID + '.view-mode-title-disabled') || 'View Mode';
                 }
-                // Never show the live mode name unless broadcast is actually reachable (user set + logged in)
-                if (!this.isBroadcastActive()) {
-                    if (!this._getBroadcastUser()) {
-                        return game.i18n.localize(MODULE.ID + '.view-mode-no-cameraman') || 'No cameraman';
-                    }
-                    return game.i18n.localize(MODULE.ID + '.view-mode-cameraman-disconnected') || 'Cameraman offline';
-                }
-                const mode = this._getCachedBroadcastMode();
-                return getModeDisplayName(mode);
+                // Show the current view mode whenever broadcast is enabled (matches the
+                // cameraman box). Cameraman connection status is not surfaced here.
+                return getModeDisplayName(this._getCachedBroadcastMode());
             },
             tooltip: () => {
                 const suffix = game.i18n.localize(MODULE.ID + '.view-mode-tooltip-suffix') || ' — Left-click: open menu';
                 if (!this.isEnabled()) {
                     return (game.i18n.localize(MODULE.ID + '.view-mode-tooltip-disabled') || 'View Mode (broadcast off)') + suffix;
                 }
-                if (!this.isBroadcastActive()) {
-                    if (!this._getBroadcastUser()) {
-                        return (game.i18n.localize(MODULE.ID + '.view-mode-no-cameraman-hint') || 'No broadcast user selected in module settings') + suffix;
-                    }
-                    return (game.i18n.localize(MODULE.ID + '.view-mode-cameraman-offline-hint') || 'The broadcast user is not logged in') + suffix;
-                }
-                const mode = this._getCachedBroadcastMode();
-                return `${getModeDisplayName(mode)}${suffix}`;
+                return `${getModeDisplayName(this._getCachedBroadcastMode())}${suffix}`;
             },
             zone: 'right',
             group: 'general',
@@ -3829,6 +3816,36 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Display name for a broadcast mode (static version of the local `getModeDisplayName`
+     * used by the menubar tool), usable from the overlay label.
+     * @param {string} mode
+     * @returns {string}
+     */
+    static _getBroadcastModeDisplayName(mode) {
+        if (mode === 'playerview-follow') {
+            const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
+            const tokenName = followTokenId ? canvas?.tokens?.get(followTokenId)?.name : null;
+            return tokenName || 'Follow';
+        }
+        if (typeof mode === 'string' && mode.startsWith('playerview-')) {
+            const userId = mode.replace('playerview-', '');
+            return game.users.get(userId)?.name || 'Player';
+        }
+        const modeNames = {
+            'manual': 'Manual',
+            'gmview': 'GM View',
+            'combat': game.i18n.localize(MODULE.ID + '.view-mode-combat') || 'Combat',
+            'combatant': game.i18n.localize(MODULE.ID + '.view-mode-combatant') || 'Combatant',
+            'tokenspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
+            'combatspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
+            'spectator': game.i18n.localize(MODULE.ID + '.view-mode-spectator') || 'Party Spectator',
+            'mapview': 'Map View',
+            'playerview': 'Player View'
+        };
+        return modeNames[mode] || 'Manual';
+    }
+
+    /**
      * Register cameraman box socket handlers and scene-change refresh.
      * - Cameraman receives `broadcast.cameramanBoxState` and starts/stops reporting.
      * - GM receives `broadcast.cameramanViewportSync` and draws the overlay.
@@ -3848,7 +3865,6 @@ this._blacksmith.HookManager.registerHook({
                 this._socketHandlerNames.add(stateHandler);
                 await blacksmith.sockets.register(stateHandler, async (data) => {
                     //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
-                    console.warn('HERALD-BOX | received cameramanBoxState', { data, isBroadcastUser: this._isBroadcastUser(), isEnabled: this.isEnabled() });
                     if (!this._isBroadcastUser()) return;
                     if (!this.isEnabled()) return;
                     if (data?.enabled) {
@@ -3864,7 +3880,6 @@ this._blacksmith.HookManager.registerHook({
                 this._socketHandlerNames.add(syncHandler);
                 await blacksmith.sockets.register(syncHandler, async (data) => {
                     //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
-                    console.warn('HERALD-BOX | GM received cameramanViewportSync', { data, isGM: game.user.isGM, boxEnabled: this._isCameramanBoxEnabled(), currentScene: canvas?.scene?.id });
                     if (!game.user.isGM) return;
                     if (!this.isEnabled()) return;
                     if (!this._isCameramanBoxEnabled()) { this._removeCameramanBox(); return; }
@@ -3922,9 +3937,8 @@ this._blacksmith.HookManager.registerHook({
     static async _emitCameramanBoxState(enabled) {
         if (!game.user.isGM) return;
         try {
-            if (!this._blacksmith?.sockets) { console.warn('HERALD-BOX | emit skipped: no sockets'); return; }
+            if (!this._blacksmith?.sockets) return;
             await this._waitForSocketsReady();
-            console.warn('HERALD-BOX | GM emitting cameramanBoxState', { enabled: !!enabled });
             await this._blacksmith.sockets.emit('broadcast.cameramanBoxState', {
                 enabled: !!enabled,
                 requestedBy: game.user.id
@@ -3941,7 +3955,6 @@ this._blacksmith.HookManager.registerHook({
      * @param {boolean} on
      */
     static _onCameramanBoxSettingChanged(on) {
-        console.warn('HERALD-BOX | setting changed', { on, isGM: game.user?.isGM, isBroadcastUser: this._isBroadcastUser() });
         if (this._isBroadcastUser()) {
             if (on) this._startCameramanBoxReporting();
             else this._stopCameramanBoxReporting();
@@ -4034,7 +4047,6 @@ this._blacksmith.HookManager.registerHook({
         try {
             if (!this._blacksmith?.sockets) return;
             await this._waitForSocketsReady();
-            console.warn('HERALD-BOX | cameraman sending viewport ->', payload);
             await this._blacksmith.sockets.emit('broadcast.cameramanViewportSync', payload);
         } catch (error) {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to send cameraman viewport", error, true, false);
@@ -4048,19 +4060,16 @@ this._blacksmith.HookManager.registerHook({
      * @param {Object|null} state - Viewport state from the cameraman, or null to redraw from last state
      */
     static _drawCameramanBox(state) {
-        if (!game.user.isGM) { console.warn('HERALD-BOX | draw skipped: not GM'); return; }
-        if (!this.isEnabled() || !this._isCameramanBoxEnabled()) { console.warn('HERALD-BOX | draw skipped: disabled/toggle-off'); this._removeCameramanBox(); return; }
-        if (!canvas?.ready) { console.warn('HERALD-BOX | draw skipped: canvas not ready'); return; }
-        if (typeof PIXI === 'undefined') { console.warn('HERALD-BOX | draw skipped: no PIXI'); return; }
+        if (!game.user.isGM) return;
+        if (!this.isEnabled() || !this._isCameramanBoxEnabled()) { this._removeCameramanBox(); return; }
+        if (!canvas?.ready) return;
+        if (typeof PIXI === 'undefined') return;
         const layer = this._getCameramanBoxLayer();
-        if (!layer) { console.warn('HERALD-BOX | draw skipped: no layer'); return; }
+        if (!layer) return;
 
         if (state) this._lastCameramanViewportState = state;
         const s = this._lastCameramanViewportState;
-        if (!s || s.x == null || s.y == null || !s.scale || !s.screenW || !s.screenH) {
-            console.warn('HERALD-BOX | draw skipped: incomplete state', s);
-            return;
-        }
+        if (!s || s.x == null || s.y == null || !s.scale || !s.screenW || !s.screenH) return;
 
         // Visible rectangle in world coordinates.
         const worldW = s.screenW / s.scale;
@@ -4071,7 +4080,6 @@ this._blacksmith.HookManager.registerHook({
         const gmScale = canvas.stage?.scale?.x || 1;
         const lineWidth = Math.max(2, 4 / gmScale); // constant on-screen thickness regardless of GM zoom
         const color = 0xff9800; // orange
-        console.warn('HERALD-BOX | drawing box', { left, top, worldW, worldH, gmScale, layer: layer?.constructor?.name });
 
         // (Re)create the graphics if missing, destroyed, or orphaned by a canvas rebuild.
         if (!this._cameramanBoxGraphics || this._cameramanBoxGraphics.destroyed || this._cameramanBoxGraphics.parent !== layer) {
@@ -4110,10 +4118,9 @@ this._blacksmith.HookManager.registerHook({
             layer.addChild(this._cameramanBoxLabel);
         }
         this._cameramanBoxLabel.zIndex = 10001;
-        const cameraUser = this._getBroadcastUser();
-        const cameraName = cameraUser?.name || 'Camera';
-        this._cameramanBoxLabel.text = `Camera: ${cameraName}`;
-        this._cameramanBoxLabel.scale.set(1 / gmScale);
+        this._cameramanBoxLabel.text = this._getBroadcastModeDisplayName(this._getCachedBroadcastMode());
+        // Half the previous on-screen size (was 1 / gmScale).
+        this._cameramanBoxLabel.scale.set(0.5 / gmScale);
         this._cameramanBoxLabel.position.set(left + (8 / gmScale), top + (8 / gmScale));
 
         // Keep the overlay crisp while the GM pans/zooms (redraw from last state).
