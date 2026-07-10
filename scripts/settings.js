@@ -30,7 +30,12 @@ export function registerSettings() {
         requiresReload: true,
         type: Boolean,
         default: false,
-        group: WORKFLOW_GROUP
+        group: WORKFLOW_GROUP,
+        // onChange fires reliably on every client even for requiresReload settings; use it
+        // to hide/show the cameraman box immediately when broadcast is toggled.
+        onChange: () => {
+            try { HeraldManager._onBroadcastEnabledChanged(); } catch (_) { /* manager may not be initialized yet */ }
+        }
     });
 
     // broadcastUserId is registered in ready (registerBroadcastUserSetting) so we have game.users for the dropdown

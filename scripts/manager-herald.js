@@ -195,9 +195,10 @@ this._blacksmith.HookManager.registerHook({
                     this._requestMenubarRender(true);
                 }
 
-                // Cameraman viewport box toggle is handled by the setting's `onChange`
-                // (see settings.js -> HeraldManager._onCameramanBoxSettingChanged), which
-                // fires reliably on every client. Not handled here to avoid double execution.
+                // The cameraman box reacts to `enableBroadcast` and `broadcastShowCameramanBox`
+                // via those settings' `onChange` handlers (see settings.js ->
+                // HeraldManager._onBroadcastEnabledChanged / _onCameramanBoxSettingChanged),
+                // which fire reliably on every client. Not handled here.
 
                 //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
             }
@@ -3129,19 +3130,37 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             icon: 'fa-solid fa-video',
             name: 'broadcast-view-mode',
             title: () => {
-                if (!this.isEnabled()) {
+                // Guarded: Blacksmith's menubar render calls title() without a try/catch,
+                // so a throw here would abort the whole render and freeze every tool label.
+                try {
+                    if (!this.isEnabled()) {
+                        return game.i18n.localize(MODULE.ID + '.view-mode-title-disabled') || 'View Mode';
+                    }
+                    // Show the current view mode whenever broadcast is enabled (matches the
+                    // cameraman box). Cameraman connection status is not surfaced here.
+                    return getModeDisplayName(this._getCachedBroadcastMode());
+                } catch (e) {
+                    if (!this._viewModeLabelErrorLogged) {
+                        this._viewModeLabelErrorLogged = true;
+                        console.error('Herald | view-mode title() threw (menubar would freeze):', e);
+                    }
                     return game.i18n.localize(MODULE.ID + '.view-mode-title-disabled') || 'View Mode';
                 }
-                // Show the current view mode whenever broadcast is enabled (matches the
-                // cameraman box). Cameraman connection status is not surfaced here.
-                return getModeDisplayName(this._getCachedBroadcastMode());
             },
             tooltip: () => {
-                const suffix = game.i18n.localize(MODULE.ID + '.view-mode-tooltip-suffix') || ' — Left-click: open menu';
-                if (!this.isEnabled()) {
-                    return (game.i18n.localize(MODULE.ID + '.view-mode-tooltip-disabled') || 'View Mode (broadcast off)') + suffix;
+                try {
+                    const suffix = game.i18n.localize(MODULE.ID + '.view-mode-tooltip-suffix') || ' — Left-click: open menu';
+                    if (!this.isEnabled()) {
+                        return (game.i18n.localize(MODULE.ID + '.view-mode-tooltip-disabled') || 'View Mode (broadcast off)') + suffix;
+                    }
+                    return `${getModeDisplayName(this._getCachedBroadcastMode())}${suffix}`;
+                } catch (e) {
+                    if (!this._viewModeLabelErrorLogged) {
+                        this._viewModeLabelErrorLogged = true;
+                        console.error('Herald | view-mode tooltip() threw (menubar would freeze):', e);
+                    }
+                    return 'View Mode';
                 }
-                return `${getModeDisplayName(this._getCachedBroadcastMode())}${suffix}`;
             },
             zone: 'right',
             group: 'general',
@@ -3531,6 +3550,11 @@ this._blacksmith.HookManager.registerHook({
      */
     static _refreshBroadcastSecondaryBarData(mode) {
         if (typeof this._blacksmith?.updateSecondaryBar !== 'function') return;
+        // Only push data when a secondary bar is actually open. Blacksmith's
+        // updateSecondaryBar logs "Cannot update closed bar" otherwise (harmless but noisy),
+        // and there is nothing to update on a closed bar anyway. Blacksmith removes the
+        // `.blacksmith-menubar-secondary` element when the bar is closed.
+        if (!document.querySelector('.blacksmith-menubar-secondary')) return;
         this._blacksmith.updateSecondaryBar({
             heraldBroadcastMode: mode,
             _heraldSyncAt: Date.now()
@@ -3898,11 +3922,8 @@ this._blacksmith.HookManager.registerHook({
                 postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to register cameraman box socket handlers", error, true, false);
             }
 
-            // Initial setup at load if the box is already enabled.
-            if (this._isCameramanBoxEnabled() && this.isEnabled()) {
-                if (this._isBroadcastUser()) this._startCameramanBoxReporting();
-                if (game.user.isGM) this._emitCameramanBoxState(true);
-            }
+            // Initial setup at load: same check as the toggles (enabled? -> box on? -> show).
+            this._applyCameramanBoxState();
         })();
 
         // On scene change: GM clears/re-requests; cameraman re-sends initial state.
@@ -3949,25 +3970,50 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
-     * Reacts to the `broadcastShowCameramanBox` toggle. Called from the setting's
-     * `onChange` (fires reliably on every client for world settings). Runs on all
-     * clients; each acts only on the role that applies to it.
-     * @param {boolean} on
+     * Single source of truth for whether the cameraman box should be active right now.
+     * Rule: broadcast must be enabled AND the box setting must be on. Applies that on
+     * whichever role this client is (cameraman reports; GM shows/hides the overlay).
+     *
+     * Called on load and from the `onChange` of both `enableBroadcast` and
+     * `broadcastShowCameramanBox` (Foundry fires onChange on every client for world
+     * settings, which is reliable even for `requiresReload` settings like enableBroadcast).
      */
-    static _onCameramanBoxSettingChanged(on) {
+    static _applyCameramanBoxState() {
+        const shouldShow = this.isEnabled() && this._isCameramanBoxEnabled();
+
+        // Cameraman: report its viewport only while the box should be shown.
         if (this._isBroadcastUser()) {
-            if (on) this._startCameramanBoxReporting();
+            if (shouldShow) this._startCameramanBoxReporting();
             else this._stopCameramanBoxReporting();
         }
+
+        // GM: request/draw the overlay when it should show, otherwise remove it.
         if (game.user?.isGM) {
-            void this._emitCameramanBoxState(on);
-            if (on) {
+            if (shouldShow) {
                 this._lastCameramanViewportState = null;
+                void this._emitCameramanBoxState(true); // ask cameraman to (re)report; box draws on sync
             } else {
                 this._removeCameramanBox();
             }
         }
-        this._requestMenubarRender(true);
+        // No menubar re-render here: the box state does not change the view-mode tool button,
+        // and the popup's Show/Hide-box item is recomputed when the menu is opened.
+    }
+
+    /**
+     * onChange handler for `broadcastShowCameramanBox`. Delegates to the shared check.
+     * @param {boolean} _on - new value (unused; `_applyCameramanBoxState` reads the setting)
+     */
+    static _onCameramanBoxSettingChanged(_on) {
+        this._applyCameramanBoxState();
+    }
+
+    /**
+     * onChange handler for `enableBroadcast`. Re-runs the box check so disabling broadcast
+     * hides the box and re-enabling restores it (if the box toggle is still on).
+     */
+    static _onBroadcastEnabledChanged() {
+        this._applyCameramanBoxState();
     }
 
     /**
