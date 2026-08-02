@@ -168,7 +168,7 @@ export function registerSettings() {
     });
 
     // `broadcastBarHeight` was removed: Blacksmith's secondary bar height is a preset
-    // (`size: 'xlarge'`, set in HeraldManager._registerBroadcastBarType), not a number.
+    // (set via `size` in HeraldManager._registerBroadcastBarType), not a number.
     // Under that model a pixel slider was a portrait-size control in disguise, and only
     // three values in its 36-120 range were reachable. Stored values in existing worlds
     // are simply ignored.

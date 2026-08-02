@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Broadcast bar migrated to Blacksmith size presets**: `registerSecondaryBarType('broadcast', …)` now passes **`size: 'xlarge'`** instead of `height`. Blacksmith's secondary bar height is a preset — `'default'` (30px), `'large'` (45px), `'xlarge'` (60px) — with no pixel option; `config.height` is ignored and logs a warning. The rendered height is unchanged at 60px, but Blacksmith's group banners are now **additive** rather than subtractive, so buttons under a banner are full size: the button box is `height - 12px`, giving **48px portraits** in the `mirror` and `follow` groups where the old subtractive model left roughly half that.
-  - `'xlarge'` is the right preset here specifically because those groups render portraits. Every Herald bar item passes `label: null`, so the body-text scaling that moves most suite bars to `'default'` does not apply — the only text on this bar is the group banner, which clamps to 8px at all three presets.
+- **Broadcast bar migrated to Blacksmith size presets**: `registerSecondaryBarType('broadcast', …)` now passes **`size: 'large'`** instead of `height`. Blacksmith's secondary bar height is a preset — `'default'` (30px), `'large'` (45px), `'xlarge'` (60px) — with no pixel option; `config.height` is ignored and logs a warning. **The bar is 15px shorter** (60px → 45px) while its buttons stay the size they were, because Blacksmith's group banners are now **additive** rather than subtractive: a banner is added on top of the bar's height instead of taken out of the items' share. The button box is `height - 12px`, so the `mirror` and `follow` groups render **33px portraits** — roughly what the old 60px bar actually produced once the banner, gap, and chrome were subtracted.
+  - The preset is chosen for the portraits. Every Herald bar item passes `label: null`, so the body-text scaling that moves most suite bars to `'default'` does not apply — the only text on this bar is the group banner, which clamps to 8px at all three presets. `'default'` was ruled out because its 18px portraits are too small to tell one player from another; `'xlarge'` (48px) was tested and is available if the bar is ever meant to be read at a distance.
+  - **Requires the Blacksmith fix to `--secondary-bar-item-image-size`.** That variable was `100%`, which is cyclic against a shrink-to-fit button and resolved to each portrait's intrinsic size — image items rendered hundreds of pixels wide and the bar clipped a horizontal band out of them. Blacksmith now derives it from bar height. On an older Blacksmith the broadcast bar's portraits will be unusable at any preset.
 - **`toggleSecondaryBar('broadcast')`** no longer passes a `{ height }` override from the menubar tool or the context menu. That override exists for bars that change appearance at runtime (Blacksmith's encounter bar switching in/out of combat); the broadcast bar has one fixed appearance.
 
 ### Removed
@@ -21,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- **`documentation/architecture-broadcast.md`**: Secondary bar section rewritten for the preset model. Removed the stale `--blacksmith-menubar-secondary-broadcast-height` references from the styling, bar, and file-structure sections; documented why `'xlarge'` applies here and why the `{ height }` override is not an escape hatch.
+- **`documentation/architecture-broadcast.md`**: Secondary bar section rewritten for the preset model. Removed the stale `--blacksmith-menubar-secondary-broadcast-height` references from the styling, bar, and file-structure sections; documented why `'large'` applies here and why the `{ height }` override is not an escape hatch.
 
 ## [13.0.6]
 

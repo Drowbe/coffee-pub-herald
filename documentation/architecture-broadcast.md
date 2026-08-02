@@ -426,23 +426,45 @@ token.testUserVisibility(broadcastUser)
 
 The broadcast feature uses a **secondary bar** (similar to combat bar) that appears below the main menubar when toggled.
 
-**Height**: `size: 'xlarge'` (60px), passed to `registerSecondaryBarType`.
+**Height**: `size: 'large'` (45px), passed to `registerSecondaryBarType`.
 
 Blacksmith exposes three presets — `'default'` (30px), `'large'` (45px), `'xlarge'`
 (60px) — and no pixel option. Height is a master scale factor: icons, images, gaps
 and padding all derive from it, so it cannot be tuned per module. `config.height` is
 ignored and logs a warning.
 
-`'xlarge'` is correct here because the `mirror` and `follow` groups render portraits,
-and the button box is `height - 12px` — 48px at xlarge versus 18px at default. Herald's
-items all pass `label: null`, so the body-text scaling that puts most bars on
-`'default'` does not apply; the only text on this bar is the group banner, which clamps
-to 8px at every preset.
+**The preset is chosen for the portraits, not for the text.** The `mirror` and `follow`
+groups render player and token portraits, and the button box is `height - 12px`:
+
+| Preset | Bar | Portraits | Icons | Banner text |
+|---|---|---|---|---|
+| `'default'` | 30px | 18px | 12px | 8px |
+| `'large'` | 45px | 33px | 18px | 8px |
+| `'xlarge'` | 60px | 48px | 24px | 8px |
+
+`'default'` is ruled out: 18px portraits cannot be told apart. `'xlarge'` is available
+if the bar is ever meant to be read across a room. `'large'` is the working choice —
+it is roughly what the old 60px bar actually produced once the banner, gap, and chrome
+were subtracted out of the items, in a bar 15px shorter.
+
+Note the last column. Herald's items all pass `label: null`, so this bar has no body
+text at all, and the group banner clamps to 8px at every preset. The type-inflation
+problem that puts most suite bars on `'default'` does not apply here — Herald buys
+image size without buying type size.
+
+Image items depend on Blacksmith's `--secondary-bar-item-image-size` being derived from
+bar height. It was once `100%`, which is cyclic against a shrink-to-fit button and
+resolved to the image's intrinsic size; portraits rendered hundreds of pixels wide and
+the bar clipped a band out of them. Fixed in Blacksmith — but if portraits ever come
+back oversized, that variable is the first thing to check.
 
 If a size the presets do not cover is ever genuinely needed, request a new preset in
 Blacksmith rather than working around it. `toggleSecondaryBar`/`openSecondaryBar` accept
 a `{ height }` override, but that exists for bars that switch appearance at runtime (the
-encounter bar); the broadcast bar has one fixed appearance and must not pass it.
+encounter bar); the broadcast bar has one fixed appearance and must not pass it. Setting
+a Blacksmith menubar variable from Herald is likewise not an option: reading
+`--blacksmith-menubar-interface-offset` is the published contract, writing any menubar
+variable is bypassing it.
 
 **Toggle Button**: Menubar tool in middle zone, combat group
 - Tool ID: `broadcast-toggle`
