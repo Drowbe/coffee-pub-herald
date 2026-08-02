@@ -251,13 +251,8 @@ export function matchUserBySetting(user, settingValue) {
 ```
 
 **Secondary Bar Styling:**
-- Add CSS variable for broadcast bar height (matches combat bar)
-- Default height: `60px` (same as combat bar)
-```css
-:root {
-    --blacksmith-menubar-secondary-broadcast-height: 60px;
-}
-```
+- Height comes from the Blacksmith `size` preset passed at registration, not from CSS
+  or a Herald setting. See **Broadcast Secondary Bar** below.
 
 ## **Camera Following Modes**
 
@@ -431,9 +426,23 @@ token.testUserVisibility(broadcastUser)
 
 The broadcast feature uses a **secondary bar** (similar to combat bar) that appears below the main menubar when toggled.
 
-**Height**: Same as combat bar (60px by default, configurable via CSS variable)
-- CSS variable: `--blacksmith-menubar-secondary-broadcast-height`
-- Default: `60px` (matches `--blacksmith-menubar-secondary-combat-height`)
+**Height**: `size: 'xlarge'` (60px), passed to `registerSecondaryBarType`.
+
+Blacksmith exposes three presets — `'default'` (30px), `'large'` (45px), `'xlarge'`
+(60px) — and no pixel option. Height is a master scale factor: icons, images, gaps
+and padding all derive from it, so it cannot be tuned per module. `config.height` is
+ignored and logs a warning.
+
+`'xlarge'` is correct here because the `mirror` and `follow` groups render portraits,
+and the button box is `height - 12px` — 48px at xlarge versus 18px at default. Herald's
+items all pass `label: null`, so the body-text scaling that puts most bars on
+`'default'` does not apply; the only text on this bar is the group banner, which clamps
+to 8px at every preset.
+
+If a size the presets do not cover is ever genuinely needed, request a new preset in
+Blacksmith rather than working around it. `toggleSecondaryBar`/`openSecondaryBar` accept
+a `{ height }` override, but that exists for bars that switch appearance at runtime (the
+encounter bar); the broadcast bar has one fixed appearance and must not pass it.
 
 **Toggle Button**: Menubar tool in middle zone, combat group
 - Tool ID: `broadcast-toggle`
@@ -509,7 +518,6 @@ scripts/
   └── api-menubar.js          # Register broadcast secondary bar type and toggle tool
 
 styles/
-  ├── menubar.css             # Add --blacksmith-menubar-secondary-broadcast-height variable (default: 60px)
   └── broadcast.css           # New CSS file for broadcast mode styling (if needed)
 
 lang/

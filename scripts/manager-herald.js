@@ -183,14 +183,12 @@ this._blacksmith.HookManager.registerHook({
                     settingKey === 'broadcastHideInterfaceRight' ||
                     settingKey === 'broadcastHideBackground' ||
                     settingKey === 'broadcastHideNotifications' ||
-                    settingKey === 'broadcastShowCombatBar' ||
-                    settingKey === 'broadcastBarHeight'
+                    settingKey === 'broadcastShowCombatBar'
                 )) {
                     if (settingKey === 'broadcastUserId') {
                         this._invalidateVisibleTokenListCaches();
                     }
                     this._updateBroadcastMode();
-                    if (settingKey === 'broadcastBarHeight') this._applyBroadcastBarHeightCss();
                     // Re-render menubar to update view mode button visibility
                     this._requestMenubarRender(true);
                 }
@@ -237,7 +235,6 @@ this._blacksmith.HookManager.registerHook({
             this._updateBroadcastMode();
             this._registerCameraHooks();
             await this._registerBroadcastBarType();
-            this._applyBroadcastBarHeightCss();
             this._registerBroadcastTools();
             this._requestMenubarRender(true);
         }, 100);
@@ -2476,22 +2473,22 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
-     * Apply broadcast bar height to the Blacksmith CSS variable so the secondary bar uses our setting.
-     * Blacksmith may use --blacksmith-menubar-secondary-broadcast-height for the broadcast bar; we set it from Herald's setting.
-     */
-    static _applyBroadcastBarHeightCss() {
-        const height = getSettingSafely(MODULE.ID, 'broadcastBarHeight', 60);
-        document.documentElement.style.setProperty('--blacksmith-menubar-secondary-broadcast-height', `${height}px`);
-    }
-
-    /**
      * Register the broadcast secondary bar type
+     *
+     * Size is a Blacksmith preset, not a number. Height there is a master scale
+     * factor — every icon, image, gap and padding in the bar derives from it — so
+     * there is no per-module override and no pixel option. 'xlarge' (60px) is the
+     * right preset here because the mirror and follow groups render player and
+     * token portraits, and the button box is `height - 12px`: 48px at xlarge,
+     * 33px at large, 18px at default. Our items all pass `label: null`, so the
+     * body-text scaling that drives most bars down to 'default' does not apply.
+     * If this needs a size the presets do not have, ask Blacksmith for a new
+     * preset rather than working around it here.
      * @private
      */
     static async _registerBroadcastBarType() {
-        const height = getSettingSafely(MODULE.ID, 'broadcastBarHeight', 60);
         await this._blacksmith.registerSecondaryBarType('broadcast', {
-            height,
+            size: 'xlarge',
             persistence: 'manual',
             groupBannerEnabled: true,
             groupBannerColor: 'rgba(62, 92, 13, 0.9)',
@@ -2605,8 +2602,7 @@ this._blacksmith.HookManager.registerHook({
             icon: 'fa-solid fa-bars',
             onClick: () => {
                 if (this._warnIfNotEnabled()) return;
-                const height = getSettingSafely(MODULE.ID, 'broadcastBarHeight', 60);
-                this._blacksmith.toggleSecondaryBar('broadcast', { height });
+                this._blacksmith.toggleSecondaryBar('broadcast');
             }
         });
 
@@ -2713,8 +2709,7 @@ this._blacksmith.HookManager.registerHook({
             tooltip: () => 'Show or hide broadcast bar',
             onClick: () => {
                 if (this._warnIfNotEnabled()) return;
-                const height = getSettingSafely(MODULE.ID, 'broadcastBarHeight', 60);
-                this._blacksmith.toggleSecondaryBar('broadcast', { height });
+                this._blacksmith.toggleSecondaryBar('broadcast');
             },
             zone: 'middle',
             group: 'combat',

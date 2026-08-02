@@ -167,17 +167,11 @@ export function registerSettings() {
         group: WORKFLOW_GROUP
     });
 
-    game.settings.register(MODULE.ID, 'broadcastBarHeight', {
-        name: MODULE.ID + '.broadcastBarHeight-Label',
-        hint: MODULE.ID + '.broadcastBarHeight-Hint',
-        scope: 'world',
-        config: true,
-        requiresReload: true,
-        type: Number,
-        default: 60,
-        range: { min: 36, max: 120, step: 2 },
-        group: WORKFLOW_GROUP
-    });
+    // `broadcastBarHeight` was removed: Blacksmith's secondary bar height is a preset
+    // (`size: 'xlarge'`, set in HeraldManager._registerBroadcastBarType), not a number.
+    // Under that model a pixel slider was a portrait-size control in disguise, and only
+    // three values in its 36-120 range were reachable. Stored values in existing worlds
+    // are simply ignored.
 
     // World scope (not client): the cameraman client must be able to read this to know
     // whether to report its viewport to the GM. Handled live, no reload required.
