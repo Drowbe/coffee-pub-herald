@@ -2477,18 +2477,19 @@ this._blacksmith.HookManager.registerHook({
      *
      * Size is a Blacksmith preset, not a number. Height there is a master scale
      * factor — every icon, image, gap and padding in the bar derives from it — so
-     * there is no per-module override and no pixel option. 'xlarge' (60px) is the
-     * right preset here because the mirror and follow groups render player and
-     * token portraits, and the button box is `height - 12px`: 48px at xlarge,
-     * 33px at large, 18px at default. Our items all pass `label: null`, so the
-     * body-text scaling that drives most bars down to 'default' does not apply.
-     * If this needs a size the presets do not have, ask Blacksmith for a new
-     * preset rather than working around it here.
+     * there is no per-module override and no pixel option. The preset is chosen
+     * for the portraits in the mirror and follow groups: the button box is
+     * `height - 12px`, so 33px at 'large' against 18px at 'default' (too small to
+     * tell one player from another) and 48px at 'xlarge'. Our items all pass
+     * `label: null`, so the body-text scaling that drives most bars down to
+     * 'default' does not apply — the only text here is the group banner, which
+     * clamps to 8px at every preset. If this needs a size the presets do not
+     * have, ask Blacksmith for a new preset rather than working around it here.
      * @private
      */
     static async _registerBroadcastBarType() {
         await this._blacksmith.registerSecondaryBarType('broadcast', {
-            size: 'xlarge',
+            size: 'large',
             persistence: 'manual',
             groupBannerEnabled: true,
             groupBannerColor: 'rgba(62, 92, 13, 0.9)',
