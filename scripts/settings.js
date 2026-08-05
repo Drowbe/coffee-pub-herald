@@ -122,7 +122,7 @@ export function registerSettings() {
         config: true,
         requiresReload: false,
         type: Number,
-        default: 30,
+        default: 5,
         range: { min: 5, max: 300, step: 5 },
         group: WORKFLOW_GROUP,
         onChange: () => {

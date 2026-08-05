@@ -58,8 +58,12 @@ export class HeraldManager {
     static _toastWatchdogIntervalId = null;  // setInterval id (also tracked in `_intervalIds`)
     static _toastFirstSeen = new Map();      // toastId -> ms; age fallback when `shownAt` is absent
 
-    /** Sweep cadence for the toast watchdog. A toast dies within `maxAge + this`. */
-    static TOAST_WATCHDOG_POLL_MS = 5000;
+    /**
+     * Sweep cadence for the toast watchdog: a toast dies within `maxAge + this`.
+     * Kept well under the 5s minimum `broadcastToastMaxAgeSeconds` so the setting means
+     * roughly what it says. Each sweep is a `getActive()` map over a handful of entries.
+     */
+    static TOAST_WATCHDOG_POLL_MS = 1000;
 
     /**
      * Settings read heavily during camera follow / pan / zoom paths.
@@ -4310,7 +4314,7 @@ this._blacksmith.HookManager.registerHook({
 
         postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Toast watchdog started", {
             pollMs: this.TOAST_WATCHDOG_POLL_MS,
-            maxAgeSeconds: getSettingSafely(MODULE.ID, 'broadcastToastMaxAgeSeconds', 30)
+            maxAgeSeconds: getSettingSafely(MODULE.ID, 'broadcastToastMaxAgeSeconds', 5)
         }, true, false);
     }
 
@@ -4347,8 +4351,8 @@ this._blacksmith.HookManager.registerHook({
         }
 
         try {
-            const maxAgeSeconds = Number(getSettingSafely(MODULE.ID, 'broadcastToastMaxAgeSeconds', 30));
-            const maxAgeMs = Math.max(1, Number.isFinite(maxAgeSeconds) ? maxAgeSeconds : 30) * 1000;
+            const maxAgeSeconds = Number(getSettingSafely(MODULE.ID, 'broadcastToastMaxAgeSeconds', 5));
+            const maxAgeMs = Math.max(1, Number.isFinite(maxAgeSeconds) ? maxAgeSeconds : 5) * 1000;
             const now = Date.now();
 
             const active = toast.getActive() ?? [];
