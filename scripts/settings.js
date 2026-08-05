@@ -99,6 +99,37 @@ export function registerSettings() {
         group: WORKFLOW_GROUP
     });
 
+    game.settings.register(MODULE.ID, 'broadcastAutoDismissToasts', {
+        name: MODULE.ID + '.broadcastAutoDismissToasts-Label',
+        hint: MODULE.ID + '.broadcastAutoDismissToasts-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: Boolean,
+        default: true,
+        group: WORKFLOW_GROUP,
+        // Cameraman-only watchdog. onChange fires on every client, so the cameraman
+        // starts/stops sweeping as soon as the GM flips this.
+        onChange: () => {
+            try { HeraldManager._onToastWatchdogSettingChanged(); } catch (_) { /* manager may not be initialized yet */ }
+        }
+    });
+
+    game.settings.register(MODULE.ID, 'broadcastToastMaxAgeSeconds', {
+        name: MODULE.ID + '.broadcastToastMaxAgeSeconds-Label',
+        hint: MODULE.ID + '.broadcastToastMaxAgeSeconds-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: Number,
+        default: 30,
+        range: { min: 5, max: 300, step: 5 },
+        group: WORKFLOW_GROUP,
+        onChange: () => {
+            try { HeraldManager._onToastWatchdogSettingChanged(); } catch (_) { /* manager may not be initialized yet */ }
+        }
+    });
+
     registerHeader('broadcastUI', 'headingH3BroadcastUI-Label', 'headingH3BroadcastUI-Hint', 'H3');
 
     game.settings.register(MODULE.ID, 'broadcastHideBackground', {

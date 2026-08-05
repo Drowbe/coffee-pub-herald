@@ -49,8 +49,17 @@ export class HeraldManager {
     // Resource tracking for cleanup
     static _hookIds = new Set(); // HookManager callback IDs
     static _timeoutIds = new Set(); // setTimeout references
+    static _intervalIds = new Set(); // setInterval references
     static _socketHandlerNames = new Set(); // Socket handler event names
     static _socketsReadyPromise = null; // Cached Blacksmith socket readiness promise
+
+    // Toast watchdog (cameraman only). Blacksmith toasts are DOM-direct, not Applications:
+    // they never appear in `_getOpenWindows()` and have no `close()`. See `_sweepStuckToasts`.
+    static _toastWatchdogIntervalId = null;  // setInterval id (also tracked in `_intervalIds`)
+    static _toastFirstSeen = new Map();      // toastId -> ms; age fallback when `shownAt` is absent
+
+    /** Sweep cadence for the toast watchdog. A toast dies within `maxAge + this`. */
+    static TOAST_WATCHDOG_POLL_MS = 5000;
 
     /**
      * Settings read heavily during camera follow / pan / zoom paths.
@@ -187,6 +196,9 @@ this._blacksmith.HookManager.registerHook({
                 )) {
                     if (settingKey === 'broadcastUserId') {
                         this._invalidateVisibleTokenListCaches();
+                        // Cameraman changed: this client may have just become (or stopped being) the
+                        // one with nobody sitting at it. `enableBroadcast` is covered by its onChange.
+                        this._applyToastWatchdogState();
                     }
                     this._updateBroadcastMode();
                     // Re-render menubar to update view mode button visibility
@@ -237,6 +249,8 @@ this._blacksmith.HookManager.registerHook({
             await this._registerBroadcastBarType();
             this._registerBroadcastTools();
             this._requestMenubarRender(true);
+            // Initial setup at load: same check as the toggles (enabled? -> cameraman? -> sweep on?).
+            this._applyToastWatchdogState();
         }, 100);
     }
 
@@ -687,6 +701,9 @@ this._blacksmith.HookManager.registerHook({
                             break;
                         case 'close-all':
                             await this._closeAllWindows();
+                            break;
+                        case 'close-toasts':
+                            this._clearAllToastsOnCameramanClient();
                             break;
                         case 'refresh':
                             window.location.reload();
@@ -2682,6 +2699,7 @@ this._blacksmith.HookManager.registerHook({
             { name: game.i18n.localize(MODULE.ID + '.context-tool-close-images'), icon: 'fa-solid fa-image', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-images'); } },
             { name: game.i18n.localize(MODULE.ID + '.context-tool-close-journals'), icon: 'fa-solid fa-book-open', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-journals'); } },
             { name: game.i18n.localize(MODULE.ID + '.context-tool-close-all'), icon: 'fa-solid fa-circle-xmark', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-all'); } },
+            { name: game.i18n.localize(MODULE.ID + '.context-tool-close-toasts'), icon: 'fa-solid fa-comment-slash', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-toasts'); } },
             { name: game.i18n.localize(MODULE.ID + '.context-tool-refresh'), icon: 'fa-solid fa-rotate', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('refresh'); } },
             { name: game.i18n.localize(MODULE.ID + '.context-tool-toggle-combat-bar'), icon: 'fa-solid fa-browser', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('toggle-combat-bar'); } },
             { name: game.i18n.localize(MODULE.ID + '.context-tool-settings'), icon: 'fa-solid fa-gear', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('settings'); } }
@@ -2992,13 +3010,28 @@ this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-toggle-co
             }
         });
 
+this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-close-toasts', {
+            icon: 'fa-solid fa-comment-slash',
+            label: null,
+            tooltip: () => game.i18n.localize(MODULE.ID + '.context-tool-close-toasts-hint'),
+            group: 'tools',
+            toggleable: false,
+            order: 5,
+            visible: () => game.user.isGM,
+            onClick: async () => {
+                if (!game.user.isGM) return;
+                if (this._warnIfNotEnabled()) return;
+                await this._emitBroadcastWindowCommand('close-toasts');
+            }
+        });
+
 this._blacksmith.registerSecondaryBarItem('broadcast', 'broadcast-tool-settings', {
             icon: 'fa-solid fa-gear',
             label: null,
             tooltip: 'Open broadcast settings',
             group: 'tools',
             toggleable: false,
-            order: 5,
+            order: 6,
             visible: () => game.user.isGM,
             onClick: async () => {
                 if (!game.user.isGM) return;
@@ -3467,7 +3500,7 @@ this._blacksmith.HookManager.registerHook({
 
     /**
      * Emit a broadcast window command to the cameraman client.
-     * @param {string} action - Command action (close-images, close-journals, close-all, refresh)
+     * @param {string} action - Command action (close-images, close-journals, close-all, close-toasts, refresh)
      * @param {{ force?: boolean }} [options] - If force is true, send even when Herald is disabled (e.g. to refresh cameraman after enable/disable)
      */
     static async _emitBroadcastWindowCommand(action, options = {}) {
@@ -4010,6 +4043,7 @@ this._blacksmith.HookManager.registerHook({
      */
     static _onBroadcastEnabledChanged() {
         this._applyCameramanBoxState();
+        this._applyToastWatchdogState();
     }
 
     /**
@@ -4215,6 +4249,176 @@ this._blacksmith.HookManager.registerHook({
     }
 
     // ==================================================================
+    // ===== TOAST WATCHDOG =============================================
+    // ==================================================================
+
+    /**
+     * Blacksmith's toast API, if this build exposes it.
+     *
+     * Toasts are not Foundry Applications — no Application instance, no `close()`,
+     * nothing in `ui.windows`. `_getOpenWindows()` and `_closeAllWindows()` cannot
+     * see them. This API is the only handle we get.
+     * @returns {object|null} The toast API, or null if unavailable/incomplete
+     */
+    static _getToastApi() {
+        const api = this._blacksmith ?? game.modules.get('coffee-pub-blacksmith')?.api;
+        const toast = api?.toast;
+        if (typeof toast?.getActive !== 'function' || typeof toast?.remove !== 'function') return null;
+        return toast;
+    }
+
+    /**
+     * Single source of truth for whether the toast watchdog should be running on this client.
+     *
+     * Cameraman only, and that restriction is the whole point: a persistent toast waits
+     * for a click, and nobody is sitting at the cameraman client to give it one. Every
+     * other client has a human who can dismiss it.
+     *
+     * Called on load and from the `onChange` of `broadcastAutoDismissToasts`,
+     * `broadcastToastMaxAgeSeconds`, and `enableBroadcast`.
+     */
+    static _applyToastWatchdogState() {
+        const shouldRun = this.isEnabled()
+            && this._isBroadcastUser()
+            && getSettingSafely(MODULE.ID, 'broadcastAutoDismissToasts', true) === true;
+
+        if (shouldRun) this._startToastWatchdog();
+        else this._stopToastWatchdog();
+    }
+
+    /**
+     * onChange handler for the toast watchdog settings. Delegates to the shared check.
+     */
+    static _onToastWatchdogSettingChanged() {
+        this._applyToastWatchdogState();
+    }
+
+    /**
+     * Cameraman only: begin sweeping for stuck toasts (idempotent).
+     */
+    static _startToastWatchdog() {
+        this._stopToastWatchdog();
+
+        if (!this._getToastApi()) {
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Toast watchdog not started (Blacksmith toast API unavailable)", "", true, false);
+            return;
+        }
+
+        this._toastWatchdogIntervalId = this._trackedSetInterval(() => {
+            this._sweepStuckToasts();
+        }, this.TOAST_WATCHDOG_POLL_MS);
+
+        postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Toast watchdog started", {
+            pollMs: this.TOAST_WATCHDOG_POLL_MS,
+            maxAgeSeconds: getSettingSafely(MODULE.ID, 'broadcastToastMaxAgeSeconds', 30)
+        }, true, false);
+    }
+
+    /**
+     * Stop the toast watchdog and drop its age bookkeeping.
+     */
+    static _stopToastWatchdog() {
+        if (this._toastWatchdogIntervalId != null) {
+            this._trackedClearInterval(this._toastWatchdogIntervalId);
+            this._toastWatchdogIntervalId = null;
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Toast watchdog stopped", "", true, false);
+        }
+        this._toastFirstSeen.clear();
+    }
+
+    /**
+     * Remove persistent toasts that have outstayed `broadcastToastMaxAgeSeconds`.
+     *
+     * Only `persistent` toasts (duration: 0) qualify. Everything else carries a duration
+     * and removes itself, so sweeping those early would just truncate them mid-read.
+     *
+     * Deliberately conservative: `remove()` is silent by design — `onDismiss` fires on
+     * auto-timeout and on the close button, but never on programmatic removal. Senders
+     * that hang cleanup on `onDismiss` (Bibliosoph's click-to-roll toasts drop their
+     * armed-toast entry there) leak that entry when we reap. Not fatal, but it is why
+     * this waits for a genuinely stuck toast instead of tidying aggressively.
+     */
+    static _sweepStuckToasts() {
+        const toast = this._getToastApi();
+        if (!toast) {
+            // API went away (Blacksmith disabled/reloaded) — nothing to sweep.
+            this._stopToastWatchdog();
+            return;
+        }
+
+        try {
+            const maxAgeSeconds = Number(getSettingSafely(MODULE.ID, 'broadcastToastMaxAgeSeconds', 30));
+            const maxAgeMs = Math.max(1, Number.isFinite(maxAgeSeconds) ? maxAgeSeconds : 30) * 1000;
+            const now = Date.now();
+
+            const active = toast.getActive() ?? [];
+            const activeIds = new Set();
+            const reaped = [];
+
+            for (const t of active) {
+                if (!t?.id) continue;
+                activeIds.add(t.id);
+                if (!t.persistent) continue; // the rest clear themselves
+
+                // `shownAt` landed in Blacksmith 13.15.0. Older builds omit it, so fall back
+                // to when this watchdog first saw the toast — always later than the true
+                // render time, so the error is toward leaving a toast up a little longer.
+                let shownAt = Number(t.shownAt);
+                if (!Number.isFinite(shownAt)) {
+                    if (!this._toastFirstSeen.has(t.id)) this._toastFirstSeen.set(t.id, now);
+                    shownAt = this._toastFirstSeen.get(t.id);
+                }
+
+                if (now - shownAt < maxAgeMs) continue;
+
+                if (toast.remove(t.id)) {
+                    reaped.push({ id: t.id, moduleId: t.moduleId, ageMs: now - shownAt });
+                }
+                this._toastFirstSeen.delete(t.id);
+            }
+
+            // Forget toasts that went away on their own (dismissed, replaced, timed out).
+            for (const id of this._toastFirstSeen.keys()) {
+                if (!activeIds.has(id)) this._toastFirstSeen.delete(id);
+            }
+
+            if (reaped.length) {
+                postConsoleAndNotification(MODULE.NAME, `BroadcastManager: Auto-dismissed ${reaped.length} stuck toast(s) on cameraman`, { maxAgeSeconds, reaped }, true, false);
+            }
+        } catch (error) {
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Toast watchdog sweep failed", error, false, false);
+        }
+    }
+
+    /**
+     * Cameraman client: clear every toast on screen right now, persistent or not.
+     *
+     * Invoked from `broadcast.windowCommand` action `close-toasts` — a GM deliberately
+     * clearing the broadcast screen, so unlike the watchdog it does not wait for an age
+     * or filter on `persistent`. Same silent-removal caveat as `_sweepStuckToasts`.
+     */
+    static _clearAllToastsOnCameramanClient() {
+        const toast = this._getToastApi();
+        if (!toast) {
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Cannot close toasts (Blacksmith toast API unavailable)", "", true, false);
+            return;
+        }
+
+        try {
+            const active = toast.getActive() ?? [];
+            let removed = 0;
+            for (const t of active) {
+                if (!t?.id) continue;
+                if (toast.remove(t.id)) removed++;
+                this._toastFirstSeen.delete(t.id);
+            }
+            postConsoleAndNotification(MODULE.NAME, `BroadcastManager: Closed ${removed} toast(s) on cameraman`, "", true, false);
+        } catch (error) {
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to close toasts", error, false, false);
+        }
+    }
+
+    // ==================================================================
     // ===== CLEANUP ====================================================
     // ==================================================================
 
@@ -4241,6 +4445,28 @@ this._blacksmith.HookManager.registerHook({
         if (timeoutId == null) return;
         clearTimeout(timeoutId);
         this._timeoutIds.delete(timeoutId);
+    }
+
+    /**
+     * Helper to track setInterval for cleanup
+     * @param {Function} callback - Callback function
+     * @param {number} delay - Interval in milliseconds
+     * @returns {number} Interval ID
+     */
+    static _trackedSetInterval(callback, delay) {
+        const intervalId = setInterval(callback, delay);
+        this._intervalIds.add(intervalId);
+        return intervalId;
+    }
+
+    /**
+     * Cancel a tracked interval and remove it from `_intervalIds`.
+     * @param {number|undefined|null} intervalId - Return value from `_trackedSetInterval`
+     */
+    static _trackedClearInterval(intervalId) {
+        if (intervalId == null) return;
+        clearInterval(intervalId);
+        this._intervalIds.delete(intervalId);
     }
 
     /**
@@ -4290,6 +4516,9 @@ this._blacksmith.HookManager.registerHook({
         this._stopGMViewportMonitoring();
         this._stopAllPlayerViewportMonitoring();
 
+        // Toast watchdog: stop sweeping and drop age bookkeeping
+        this._stopToastWatchdog();
+
         // Cameraman viewport box: stop reporting (cameraman) and remove overlay (GM)
         this._stopCameramanBoxReporting();
         this._removeCameramanBox();
@@ -4325,6 +4554,12 @@ this._blacksmith.HookManager.registerHook({
             clearTimeout(timeoutId);
         }
         this._timeoutIds.clear();
+
+        // Clear any remaining tracked intervals (defensive; the watchdog stop above is a no-op here)
+        for (const intervalId of this._intervalIds) {
+            clearInterval(intervalId);
+        }
+        this._intervalIds.clear();
 
         // Clear Maps (handlers already removed by _stopAllPlayerViewportMonitoring)
         this._playerPanHandlers.clear();

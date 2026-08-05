@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [13.0.8]
+
+### Added
+
+- **Toast watchdog (cameraman only)**: Blacksmith toasts are DOM-direct — no Application instance, no `close()`, nothing in `ui.windows` — so Herald's existing window-closing paths (`_getOpenWindows()`, `_closeAllWindows()`) never saw them. A **persistent** toast (`duration: 0`) waits for a click, and nobody is sitting at the cameraman client to give it one, so it stayed on the broadcast screen indefinitely. `HeraldManager._sweepStuckToasts()` now polls `api.toast.getActive()` every 5s and calls `api.toast.remove(id)` on persistent toasts older than the configured age.
+  - **Only persistent toasts are swept.** Everything else carries a duration (8s default) and removes itself; reaping those early would just truncate them mid-read.
+  - **Age comes from `shownAt`** (added in Blacksmith 13.15.0). If a toast lacks it, Herald falls back to when the watchdog first saw the toast — always later than the true render time, so the error is toward leaving a toast up longer, never cutting one short.
+  - **Deliberately conservative**, because `remove()` is silent by design: `onDismiss` fires on auto-timeout and on the close button, but never on programmatic removal, `clearByModule()`, `stackKey` replacement, or stack-cap eviction. Senders that hang cleanup on `onDismiss` (Bibliosoph's click-to-roll toasts drop their armed-toast entry there) leak that entry when Herald reaps. Not fatal, but the reason this waits for a genuinely stuck toast rather than tidying aggressively.
+  - Runs only where `isEnabled() && _isBroadcastUser() && broadcastAutoDismissToasts`, gated through `_applyToastWatchdogState()` — the same start/stop-from-one-check shape as `_applyCameramanBoxState()`. Reacts to `enableBroadcast`, `broadcastUserId`, and both new settings.
+  - **Scope note**: if the cameraman account is on Blacksmith's `toastExcludedUsers`, most toasts never render there and this is a backstop for deliberate GM sends (`bypassExclusion` in the Send Toast window). If it is *not* excluded, exclusion plus channels is the better primary fix and this is the safety net.
+- **`broadcastAutoDismissToasts`** (default on) and **`broadcastToastMaxAgeSeconds`** (default 30, range 5–300): the watchdog toggle and age threshold. A toast is removed within `maxAge + 5s`.
+- **"Close Toasts" tool**: New GM tool in the broadcast bar's `tools` group (`fa-comment-slash`, order 5 — settings moved to 6) and in the Tools context menu, emitting the new `close-toasts` window command. Unlike the watchdog it clears **every** toast on the cameraman, persistent or not, and does not wait for an age — it is a human deliberately clearing the broadcast screen.
+- **`_trackedSetInterval` / `_trackedClearInterval`** and an `_intervalIds` set, mirroring the existing timeout tracking so `cleanup()` tears intervals down too.
+
+### Notes
+
+- The existing `broadcastHideNotifications` setting does **not** cover this. Its CSS targets Foundry's `#notifications` queue; Blacksmith toasts render in their own container.
+
 ## [13.0.7]
 
 ### Changed
