@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.0.0]
+
+### Changed
+
+- **FoundryVTT v14 support**: `compatibility` is now `minimum: "13"`, `verified: "14"`, `maximum: "14"`. v13 is still supported — nothing in the suite has dropped it. Verified against 14.367.
+- **Broadcast UI-hiding selectors fixed for v14 (`styles/broadcast.css`)**: The left/middle/right interface sections moved from classes to IDs. Through v13 they were `section.ui-left` / `.ui-middle` / `.ui-right`; on v14 they are `section#ui-left.flexrow`, `section#ui-middle`, `section#ui-right.flexrow`, and there is no shared class left to target since `ui-middle` carries none. The rules now use `#interface > section#ui-left` and siblings.
+  - **This was a silent break, which is why it matters more than it reads.** A CSS rule that matches nothing raises no error and logs no warning — it simply stops applying. On v14 the three granular "Hide Interface" settings would have appeared to do nothing, leaving the streamer's navigation, players list and sidebar **visible on camera** with no indication anything was wrong. The full-interface rule (`#interface`) and `#notifications` were unaffected, so the failure would only have shown up for users hiding sections individually.
+  - `.blacksmith-menubar-container`, `.blacksmith-menubar-secondary` and `.squire-tray` are unchanged on v14 and were left alone. The secondary bar is frequently absent from the DOM because it only exists while something has registered one — that is not a sign the rule is stale.
+- **Journal hooks corrected to the ApplicationV2 names (`_registerBroadcastWindowHooks`)**: Now registers `renderJournalEntrySheet` and `renderJournalEntryPageSheet` only. Herald had been registering four names, including the retired v12-era `renderJournalSheet` and `renderJournalPageSheet`.
+  - **This was fixing a double-emit, not just a warning.** The legacy names never fire on their own, but Blacksmith 14.1.0 remaps `renderJournalSheet` onto `renderJournalEntrySheet` — and Herald *also* registered `renderJournalEntrySheet` directly, so the remap produced two live registrations of the same callback. Every journal open fired `_emitBroadcastWindowOpened()` twice, sending two "window opened" socket messages to the cameraman client instead of one. The remap turns a dead registration into a live one, which is correct; for a module holding both names it doubles rather than restores.
+  - The ApplicationV2 render hooks pass a native `HTMLElement` where the V1 hooks passed jQuery. Herald's callbacks are zero-arg, so the signature change has no effect here, but any future callback taking arguments must expect an element rather than a jQuery object.
+- **Camera code unchanged**: `canvas.scene._viewPosition`, `canvas.pan` and `canvas.animatePan` all behave on v14 as they did on v13, and no public accessor has replaced `_viewPosition`. Verified, not assumed.
+
+### Notes
+
+- **"Hide Scene Background" (`broadcastHideBackground`) still does nothing, and is now labelled as such in the setting hint.** The setting has existed since Herald's initial commit and has never worked in any Foundry generation. Its CSS rule targeted `canvas.background`, an element that does not exist — the scene renders into a single `canvas#board` and the background is a PIXI mesh *inside* that canvas, not a DOM node, so no selector could reach it. It failed silently, which is why a dead toggle went unreported for the module's whole life.
+  - A JS implementation was written for this release and **reverted before shipping**. It set `canvas.environment.primary.background.visible`, gated on the broadcast user. During testing a **non-broadcast client loaded with a black game view** — behaviour the gating does not account for, since the hide path is reachable only where `matchUserBySetting()` returns true, `_isBroadcastUser()` was evaluated at fire time rather than captured at registration, and `visible` is per-client PIXI state that is never socketed or persisted. The black view could not be reproduced afterwards, and the leading theory is an unrelated cause with coincidental timing. Rather than ship a change that could not be explained, it was pulled. A setting that has never worked is a much smaller problem than a map that fails to render for an ordinary player.
+  - The mechanism itself was since verified sound, and the reasoning behind it corrected: the background and token *sprites* share `PrimaryCanvasGroup` (only the `TokenLayer` interaction layer sits in `InterfaceCanvasGroup`), but `visible` is per-object PIXI state that does not propagate to siblings, so hiding the background mesh leaves tokens rendering. See `documentation/architecture-broadcast.md` §1a before attempting this again.
+  - `canvas#board` was ruled out as a substitute regardless: it renders tokens and tiles too, so hiding it would black out the broadcast rather than clean it up.
+  - The dead CSS rule is replaced by a comment recording what was tried and why it was withdrawn, so the next attempt does not repeat it. Nothing about the toggle is persisted — `visible` is per-client PIXI render state — so any client left with a hidden background is fixed by a reload.
+
 ## [13.0.8]
 
 ### Added
