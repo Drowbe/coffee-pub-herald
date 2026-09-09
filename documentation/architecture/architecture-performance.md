@@ -1,6 +1,8 @@
-# Performance / Memory Review
+# Performance
 
-Scope: `coffee-pub-herald` (Foundry VTT v13+) with Blacksmith API usage.
+**Audience:** developers working on Herald.
+
+Memory leaks, performance hotspots, and risky usage patterns around Blacksmith's `HookManager` and sockets, with what was fixed and what remains optional. Scope is `coffee-pub-herald` on Foundry VTT v13-v14.
 
 This doc focuses on potential memory leaks, performance hotspots, and incomplete / risky usage patterns around Blacksmith `HookManager` and Blacksmith sockets.
 

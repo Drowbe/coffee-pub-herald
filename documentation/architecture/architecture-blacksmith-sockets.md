@@ -1,6 +1,8 @@
-# Blacksmith — sockets, unload, unregister (for Herald)
+# Blacksmith Sockets
 
-Authoritative note from Blacksmith maintainers; mirrored here for Herald’s wiki / `performance.md` cross-reference.
+**Audience:** developers working on Herald.
+
+Socket lifetime, the absent unregister API, and what that means for teardown. An authoritative note from the Blacksmith maintainers, mirrored here because Herald's [performance](architecture-performance.md) risk table depends on it.
 
 ## `unloadModule` / teardown on Blacksmith’s SocketManager
 

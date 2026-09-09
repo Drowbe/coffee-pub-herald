@@ -3,7 +3,7 @@
 **Master list:** This file contains all todos referenced in architecture and API documentation.
 **Process:** When a task is completed, add it to **`CHANGELOG.md`**, then remove it from this file and from any completed-task language in API/architecture docs.
 
-**Current release:** See **CHANGELOG.md** **[13.0.2]** for performance (timers, hot-path debug, viewport/token caches, Rank 7), menubar/view-mode polish, and combat-bar toggle tool. Older **[13.0.1]** notes cover Token Spectator, Party Spectator rename, Combat/Combatant naming, Mirror display name, etc.
+**Current release:** See **CHANGELOG.md** **[14.0.0]** for the FoundryVTT v14 pass — v14 `section#ui-*` selector fixes, the ApplicationV2 journal hook correction, and the withdrawn scene-background implementation. **[13.0.8]** covers the toast watchdog; **[13.0.7]** the secondary-bar size presets.
 
 
 #### Canvas Ambient Sound for Herald Client *(low priority)*

@@ -34,28 +34,34 @@
 }
 
 /* Granular control: Hide left UI section (navigation, players, etc.) */
-.broadcast-mode.hide-interface-left #interface > section.ui-left {
+/* v14: these sections carry IDs, not classes (section#ui-left etc.). The v13-era
+   `section.ui-left` class selectors match nothing on v14 and silently no-op,
+   which would leave the streamer's UI visible on camera. */
+.broadcast-mode.hide-interface-left #interface > section#ui-left {
     display: none !important;
     visibility: hidden !important;
 }
 
 /* Granular control: Hide middle UI section */
-.broadcast-mode.hide-interface-middle #interface > section.ui-middle {
+.broadcast-mode.hide-interface-middle #interface > section#ui-middle {
     display: none !important;
     visibility: hidden !important;
 }
 
 /* Granular control: Hide right UI section */
-.broadcast-mode.hide-interface-right #interface > section.ui-right {
+.broadcast-mode.hide-interface-right #interface > section#ui-right {
     display: none !important;
     visibility: hidden !important;
 }
 
-/* Hide scene background when broadcastHideBackground is enabled */
-.broadcast-mode.hide-background canvas.background {
-    opacity: 0 !important;
-    visibility: hidden !important;
-}
+/* Hide scene background when broadcastHideBackground is enabled.
+   NOT DONE HERE. The scene renders into a single `canvas#board` and the background is
+   a PIXI mesh inside it, not a DOM element, so no CSS selector can reach it -- the old
+   `canvas.background` rule matched nothing and never worked in any Foundry generation.
+   A JS implementation via `canvas.environment.primary.background.visible` was attempted
+   and REVERTED: it coincided with a black game view on a non-broadcast client, which the
+   gating does not explain, so it is not trusted. The setting is currently NOT IMPLEMENTED.
+   The `.hide-background` body class is still applied but carries no rule of its own. */
 
 /* Hide notifications when broadcastHideNotifications is enabled */
 .broadcast-mode.hide-notifications #notifications {

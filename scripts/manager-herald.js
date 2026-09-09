@@ -1002,7 +1002,10 @@ this._blacksmith.HookManager.registerHook({
                 document.body.classList.remove('hide-interface-right');
             }
             
-            // Apply background hiding class
+            // Apply background hiding class.
+            // NOTE: this class currently has no effect -- see styles/broadcast.css.
+            // The setting is not implemented; do not add a PIXI toggle here without
+            // verifying on a live client first.
             if (getSettingSafely(MODULE.ID, 'broadcastHideBackground', true)) {
                 document.body.classList.add('hide-background');
             } else {
@@ -1877,38 +1880,31 @@ this._blacksmith.HookManager.registerHook({
             }
         });
 
-this._blacksmith.HookManager.registerHook({
-            name: 'renderJournalSheet',
-            description: 'BroadcastManager: Auto-close journals after share',
-            context: 'broadcast-windows',
-            priority: 5,
-            key: 'broadcast-windows-journal',
-            callback: () => {
-                //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
-                this._emitBroadcastWindowOpened();
-                //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
-            }
-        });
-
-this._blacksmith.HookManager.registerHook({
-            name: 'renderJournalPageSheet',
-            description: 'BroadcastManager: Auto-close journals after share (page view)',
-            context: 'broadcast-windows',
-            priority: 5,
-            key: 'broadcast-windows-journal-page',
-            callback: () => {
-                //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
-                this._emitBroadcastWindowOpened();
-                //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
-            }
-        });
-
+// v13+ journal sheets are ApplicationV2 (JournalEntrySheet). The v12 names
+        // renderJournalSheet / renderJournalPageSheet never fire and are remapped by
+        // Blacksmith's HookManager onto the names below, so registering them too would
+        // fire this callback twice per journal open. Register only the V2 names.
+        // Note: the V2 hooks pass a native HTMLElement where V1 passed jQuery -- these
+        // callbacks take no arguments, so the signature change does not affect Herald.
 this._blacksmith.HookManager.registerHook({
             name: 'renderJournalEntrySheet',
             description: 'BroadcastManager: Auto-close journals after share (entry sheet)',
             context: 'broadcast-windows',
             priority: 5,
             key: 'broadcast-windows-journal-entry',
+            callback: () => {
+                //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
+                this._emitBroadcastWindowOpened();
+                //  ------------------- END - HOOKMANAGER CALLBACK ---------------------
+            }
+        });
+
+this._blacksmith.HookManager.registerHook({
+            name: 'renderJournalEntryPageSheet',
+            description: 'BroadcastManager: Auto-close journals after share (page sheet)',
+            context: 'broadcast-windows',
+            priority: 5,
+            key: 'broadcast-windows-journal-page',
             callback: () => {
                 //  ------------------- BEGIN - HOOKMANAGER CALLBACK -------------------
                 this._emitBroadcastWindowOpened();

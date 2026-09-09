@@ -40,3 +40,6 @@ npm-debug.log*
 dist/
 build/
 _BACKUPS/
+
+# Wiki pages built by tools/wiki-sync.mjs; the Action rebuilds them on push.
+tools/.wiki-build/

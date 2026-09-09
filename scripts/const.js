@@ -5,7 +5,7 @@
 const moduleData = {
     id: "coffee-pub-herald",
     title: "Coffee Pub Herald",
-    version: "13.0.0",
+    version: "14.0.0",
     authors: [{ name: "COFFEE PUB" }]
 };
 
@@ -15,5 +15,5 @@ export const MODULE = {
     TITLE: moduleData.title,
     VERSION: moduleData.version,
     AUTHOR: moduleData.authors[0]?.name || "COFFEE PUB",
-    APIVERSION: "13.0.0"
+    APIVERSION: "14.0.0"
 };

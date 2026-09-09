@@ -1,24 +1,22 @@
-# Broadcast Feature Architecture
+# Broadcast
 
-> **For Blacksmith Developers Only**
-> 
-> This document covers the **internal architecture** of the Broadcast feature in Coffee Pub Blacksmith.
-> 
-> The Broadcast feature enables streaming/recording of FoundryVTT sessions by designating a specific user as the "cameraman" who sees a clean, UI-free view that automatically follows tokens.
+**Audience:** developers working on Herald.
 
-**Audience:** Contributors to the Blacksmith codebase.
+How the broadcast feature is built and why: the user-based camera model, the UI-hiding strategy, and the Foundry DOM and PIXI surfaces it depends on. Which Blacksmith APIs it consumes is covered in [Blacksmith APIs](architecture-blacksmith-integration.md); how to *use* the feature is in the [GM guide](../userguides/userguide-gm.md).
+
+The feature was migrated out of Coffee Pub Blacksmith.
 
 ## **Overview**
 
-The Broadcast feature provides a simple, powerful system for streaming FoundryVTT sessions. Unlike modules that attempt to detect OBS automatically, Blacksmith uses a **user-based approach**: a designated user (the "cameraman") logs into the session and receives a specially configured view.
+The Broadcast feature provides a simple, powerful system for streaming FoundryVTT sessions. Unlike modules that attempt to detect OBS automatically, Herald uses a **user-based approach**: a designated user (the "cameraman") logs into the session and receives a specially configured view.
 
 **Key Design Principle:** Instead of trying to detect OBS or browser sources (which is fragile and unreliable), we identify a specific user as the "broadcast user" and configure their client accordingly.
 
 ## **Current Status: IMPLEMENTED (Active)**
 
-User-based broadcast approach; modes and secondary bar in place. Remaining work (if any) in **`TODO.md`**.
+User-based broadcast approach; modes and secondary bar in place.
 
-## **Current Implementation (v13.0.13)**
+## **Current Implementation (Herald 14.0.0)**
 
 ### **Modes and Views**
 - **Spectator**: Follows party tokens and uses viewport fill percent for zoom.
@@ -49,9 +47,9 @@ User-based broadcast approach; modes and secondary bar in place. Remaining work 
 - **Consistent**: Same pattern as existing `excludedUsersMenubar` setting
 
 **OBS Detection Assessment:**
-- ❌ **Not Needed**: User-based approach eliminates the need for OBS detection
-- ❌ **Fragile**: Browser detection is unreliable and can break with updates
-- ✅ **Optional Enhancement**: Could be added later as a convenience feature to auto-enable settings, but not core functionality
+- NO **Not Needed**: User-based approach eliminates the need for OBS detection
+- NO **Fragile**: Browser detection is unreliable and can break with updates
+- YES **Optional Enhancement**: Could be added later as a convenience feature to auto-enable settings, but not core functionality
 
 ### **2. Permission Model**
 
@@ -165,14 +163,18 @@ export function matchUserBySetting(user, settingValue) {
 
 #### **1. Foundry Core UI**
 
-**Structure Discovery**: The entire Foundry interface is in a single `<div id="interface">` containing `ui-left`, `ui-middle`, and `ui-right` sections.
+**Structure Discovery**: The entire Foundry interface is in a single `<div id="interface">` containing the `ui-left`, `ui-middle`, and `ui-right` sections.
+
+> **v14 change — the sections are IDs, not classes.** Through v13 these were `section.ui-left` / `.ui-middle` / `.ui-right`. On v14 they are `section#ui-left.flexrow`, `section#ui-middle`, `section#ui-right.flexrow`. There is no shared class left to target (`ui-middle` carries none), so the selectors must use the IDs. Verified on 14.367.
+>
+> This class-to-ID move is a **silent** break: a CSS rule that matches nothing simply does not apply, so the symptom is not an error but the streamer's UI staying visible on camera. Any new rule added here should be confirmed against a live v14 client, not assumed.
 
 **Elements to Hide:**
 - `#interface` - Hides entire Foundry UI (navigation, players, hotbar, controls, pause, hud, etc.)
 - **Optional Granular Control**: Individual sections can be hidden:
-  - `#interface > section.ui-left` - Left sidebar (navigation, players, etc.)
-  - `#interface > section.ui-middle` - Middle section
-  - `#interface > section.ui-right` - Right sidebar
+  - `#interface > section#ui-left` - Left sidebar (navigation, players, etc.)
+  - `#interface > section#ui-middle` - Middle section
+  - `#interface > section#ui-right` - Right sidebar
 
 **Method**: CSS classes + body class toggle
 ```css
@@ -182,20 +184,54 @@ export function matchUserBySetting(user, settingValue) {
 }
 
 /* Optional: Granular control with settings */
-.broadcast-mode #interface > section.ui-left {
+.broadcast-mode #interface > section#ui-left {
     display: none !important;
 }
 
-.broadcast-mode #interface > section.ui-middle {
+.broadcast-mode #interface > section#ui-middle {
     display: none !important;
 }
 
-.broadcast-mode #interface > section.ui-right {
+.broadcast-mode #interface > section#ui-right {
     display: none !important;
 }
 ```
 
-**Implementation**: Add `broadcast-mode` class to `<body>` when broadcast user is active. Toggle via JavaScript based on `_isBroadcastUser()` check.
+#### **1a. Scene Background — NOT IMPLEMENTED (withdrawn, cause unexplained)**
+
+`broadcastHideBackground` ("Hide Scene Background") **does not work and never has.** The scene renders into a single `canvas#board` and the background is a PIXI `PrimarySpriteMesh` *inside* that canvas, not a separate DOM node, so no CSS selector can reach it. Herald's `.broadcast-mode.hide-background canvas.background` rule matched nothing from the module's first commit onward and failed silently, which is why it went unreported.
+
+`canvas#board` is **not** a substitute — it renders tokens and tiles too, so hiding it would black out the broadcast entirely.
+
+**A JS implementation was attempted for 14.0.0 and withdrawn.** Recorded here so the next attempt starts informed.
+
+**The approach itself is sound, but not for the reason first given.** The original justification was that the background and tokens sit in different canvas groups. That is **false**, and was verified false on a live v14 client:
+
+| Object | Class | Parent group |
+| --- | --- | --- |
+| `canvas.environment.primary.background` | `PrimarySpriteMesh` | `PrimaryCanvasGroup` |
+| `canvas.tokens` (the *layer*) | `TokenLayer` | `InterfaceCanvasGroup` |
+| `token.mesh` (what actually renders) | `PrimarySpriteMesh` | **`PrimaryCanvasGroup`** |
+
+Token *sprites* share the background's group; only the `TokenLayer` interaction layer sits elsewhere. Reading `canvas.tokens` and generalising to the sprites is the specific mistake to avoid here.
+
+The toggle nonetheless works, for a different reason: **`visible` is per-object PIXI state and does not propagate to siblings.** Hiding one child mesh of `PrimaryCanvasGroup` leaves the others rendering. Measured live on a 13-token scene:
+
+    before:  bg.visible=true   token[0].mesh.visible=true
+    during:  bg.visible=false  token[0].mesh.visible=true
+             primaryGroup.visible=true  stage.visible=true
+
+**Why it was withdrawn anyway.** During testing a **non-broadcast client loaded with a black game view**. That is unexplained, and the explanations available were ruled out:
+- The hide path (`visible = false`) was reachable only inside the `isBroadcastUser` branch of `_updateBroadcastMode()`; `matchUserBySetting()` returns false for a client not named in `broadcastUserId`.
+- `_refreshSceneBackgroundVisibility()` evaluated `_isBroadcastUser()` **inside** the `canvasReady` handler at fire time, not captured at registration, so a stale user check is not the cause.
+- `visible` is per-client PIXI state — never socketed, never written to the scene document — so one client's toggle cannot reach another.
+- The black view could **not be reproduced** on a v14 client with the toggle applied directly to a normal GM session.
+
+The leading remaining theory is that the black view had an unrelated cause and the timing was coincidence — the world it appeared in had other modules throwing `ReferenceError` at load on v14. **That is a theory, not a finding. Do not re-land this without reproducing and explaining the black screen first**, ideally with instrumentation capturing which client each call runs on and what `_isBroadcastUser()` returns at that moment.
+
+Remaining caveat if it is re-landed: **tiles are siblings of the background** in `PrimaryCanvasGroup`, so a working background toggle still leaves tile-built maps visible on camera.
+
+Nothing about the toggle is persisted, so a client left with a hidden background is fixed by a reload.
 
 #### **2. Blacksmith UI**
 
@@ -596,7 +632,7 @@ static _isBroadcastUser(user) {
 ```
 
 **When to Refactor**: 
-- ✅ **Now**: If implementing broadcast feature (good opportunity to clean up existing code)
+- YES **Now**: If implementing broadcast feature (good opportunity to clean up existing code)
 - ⏳ **Later**: If we add more features that need user matching
 
 ## **Integration Points**
@@ -706,9 +742,14 @@ static _isUserExcluded(user) {
 
 ### **Compatibility**
 
-**FoundryVTT v13:**
-- Use v13 API patterns (native DOM, Application V2)
+**FoundryVTT v13 / v14:**
+- Use native DOM and ApplicationV2 patterns
 - No jQuery dependencies
+- Herald ships `compatibility: { minimum: "13", verified: "14", maximum: "14" }`
+- **Hook names:** journal sheets are ApplicationV2, so register `renderJournalEntrySheet` and `renderJournalEntryPageSheet`. The v12-era `renderJournalSheet` / `renderJournalPageSheet` never fire; Blacksmith's HookManager remaps them, so registering both a legacy name and its modern equivalent produces two live registrations of the same callback rather than one. The ApplicationV2 render hooks also pass a native `HTMLElement` where the V1 hooks passed jQuery — Herald's callbacks are zero-arg, so this does not affect it, but any new callback taking arguments must expect an element.
+- **Runtime self-check:** Blacksmith 14.1.0 exposes `blacksmithSilentHooks()`, which lists registered hook names that have not fired. Run it after exercising broadcast mode; anything still listed is a suspect registration.
+- **Scene background hiding is not implemented** — see **1a** above for what was tried and why it was withdrawn.
+- **Camera APIs are unchanged on v14:** `canvas.scene._viewPosition`, `canvas.pan` and `canvas.animatePan` all behave as on v13. No public accessor has replaced `_viewPosition`; `canvas.stage.pivot` agrees on x/y but carries no scale.
 
 **Module Conflicts:**
 - May conflict with other camera/UI hiding modules
@@ -752,16 +793,16 @@ static _isUserExcluded(user) {
 - Could reduce manual configuration steps
 
 **Why OBS Detection Was Rejected:**
-- ❌ **Fragile**: Browser detection is unreliable and can break with updates
-- ❌ **Not Core**: Everything works perfectly without it
-- ❌ **Better UX**: Manual broadcast user selection is clearer and more reliable
-- ❌ **Unnecessary Complexity**: Adds fragile detection code without real benefit
+- NO **Fragile**: Browser detection is unreliable and can break with updates
+- NO **Not Core**: Everything works perfectly without it
+- NO **Better UX**: Manual broadcast user selection is clearer and more reliable
+- NO **Unnecessary Complexity**: Adds fragile detection code without real benefit
 
 **The User-Based Approach Is Superior:**
-- ✅ **Reliable**: Designated user approach doesn't depend on browser detection
-- ✅ **Flexible**: Works with OBS, other streaming tools, recordings, or any use case
-- ✅ **Clear**: GM explicitly selects the cameraman user (no ambiguity)
-- ✅ **Simple**: One setting (`broadcastUserId`) instead of detection + fallbacks
+- YES **Reliable**: Designated user approach doesn't depend on browser detection
+- YES **Flexible**: Works with OBS, other streaming tools, recordings, or any use case
+- YES **Clear**: GM explicitly selects the cameraman user (no ambiguity)
+- YES **Simple**: One setting (`broadcastUserId`) instead of detection + fallbacks
 
 **Conclusion**: The user-based approach is more reliable, flexible, and simpler. OBS detection would add complexity without providing meaningful value. **This decision is final and OBS detection will not be implemented.**
 
@@ -848,9 +889,9 @@ static _isUserExcluded(user) {
 
 ### **Decisions:**
 
-1. ✅ **User-based approach** (not OBS detection)
-2. ✅ **Single broadcast user** (not multiple, for MVP)
-3. ✅ **OBSERVER permissions** (required for proper visibility)
+1. YES **User-based approach** (not OBS detection)
+2. YES **Single broadcast user** (not multiple, for MVP)
+3. YES **OBSERVER permissions** (required for proper visibility)
 4. ⏳ **File organization**: Single file vs split? (Start single, split if needed)
 5. ⏳ **Background removal**: CSS overlay vs scene modification? (CSS preferred)
 

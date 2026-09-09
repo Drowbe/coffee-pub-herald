@@ -26,7 +26,7 @@
         "headingH3BroadcastUI-Label": "UI Visibility",
         "headingH3BroadcastUI-Hint": "",
         "broadcastHideBackground-Label": "Hide Scene Background",
-        "broadcastHideBackground-Hint": "Hide the scene background image when in broadcast mode. Useful for cleaner streaming visuals.",
+        "broadcastHideBackground-Hint": "NOT CURRENTLY IMPLEMENTED — this setting has no effect. The scene background cannot be hidden by the method Herald used, and a replacement is still being verified.",
         "broadcastHideInterfaceLeft-Label": "Hide Left UI Section",
         "broadcastHideInterfaceLeft-Hint": "Hide the left UI section (navigation, players list) when in broadcast mode.",
         "broadcastHideInterfaceMiddle-Label": "Hide Middle UI Section",
