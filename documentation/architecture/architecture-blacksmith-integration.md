@@ -2,7 +2,7 @@
 
 **Audience:** developers working on Herald, and on other Coffee Pub modules that consume Blacksmith.
 
-Which Blacksmith surfaces Herald uses, and the contract changes every consumer needs to know. This covers consuming Blacksmith; how Herald's own broadcast feature is built is in [Broadcast architecture](architecture-broadcast.md).
+Which Blacksmith surfaces Herald uses, and the contract changes every consumer needs to know. This covers consuming Blacksmith; how Herald's own broadcast feature is built is in [Broadcast architecture](architecture-broadcast.md). Stream overlays that consume `api.stats.party` are in [Stream widgets](architecture-stream-widgets.md).
 
 ## The API surfaces
 

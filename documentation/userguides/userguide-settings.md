@@ -53,3 +53,9 @@ Every Herald setting by its on-screen name. All of them are world settings — o
 **Switch to (Combat Begin)** — the mode to adopt automatically when you click Begin Combat. **No change** leaves the mode alone.
 
 **Switch to (Combat End)** — the mode to return to when you click End Combat. **No change** leaves the mode alone.
+
+## Stream Overlay
+
+These widgets render on Foundry's `/stream` capture page, not on the cameraman tabletop. Coffee Pub Studio crops each one into its own OBS source. See [Stream overlay](userguide-stream-widgets.md).
+
+**Show MVP Leaderboard on Stream** — draws the lifetime MVP ranking on `/stream` as a fixed 380 by 320 pixel box immediately to the right of chat. Studio captures it with the selector `#herald-stats`. Turning it off hides the box without removing it, so an existing Studio region keeps a valid crop.

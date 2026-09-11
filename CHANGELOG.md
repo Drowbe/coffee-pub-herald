@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+
+- **MVP leaderboard stream widget**: Foundry's `/stream` capture page now draws a fixed lifetime MVP ranking so Coffee Pub Studio can crop it into its own OBS source. The root is `#herald-stats` (380 by 320 pixels), placed immediately to the right of the stream chat column. Detection matches Blacksmith: `game.view === 'stream'` (toasts) or `body.stream` (loading overlay), and the box is mounted on `init` as well as `ready`. Inner markup is DOM-direct like Blacksmith toasts — no Handlebars — because awaiting `BlacksmithAPI.waitForReady()` (which only resolves, never rejects) on `/stream` left the box an empty black rectangle. Position, size, and visibility are inline styles so Foundry's `body.stream` stylesheet cannot hide or reflow it. Rank, portrait, name, total, average, and fight count come from Blacksmith's `stats.party.getAggregate()`. Extra rows scroll inside the box; an empty board still leaves the element in the page. The widget does not render on `/game`. See `documentation/architecture/architecture-stream-widgets.md`.
+
 ## [14.0.0]
 
 ### Changed

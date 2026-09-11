@@ -50,3 +50,7 @@ For anything that gets stuck, the **Tools** submenu has:
 **Watch what GM View exposes.** In GM View the audience sees your screen. That includes anything you open, pan to, or reveal. Switch away from it before consulting your notes.
 
 **Mind the camera's permissions.** A Player-role camera sees what players see, which is usually right. A GM-role camera sees everything, including secret tokens and unexplored map.
+
+## Stream overlay
+
+The cameraman tabletop is the map feed. Foundry's `/stream` page is a separate capture surface. Herald can draw overlays there for Coffee Pub Studio to crop into their own OBS sources — starting with the lifetime MVP leaderboard. That widget does not appear on your tabletop or on the camera's map. See [Stream overlay](userguide-stream-widgets.md).

@@ -1,0 +1,184 @@
+/* ==================================================================
+   ===== STREAM STATS WIDGET ========================================
+   Cropped by Coffee Pub Studio from Foundry's /stream page.
+   The measured box is #herald-stats. Do not animate, transform, or
+   size this root from content. See architecture-stream-widgets.md.
+   ================================================================== */
+
+#herald-stats.herald-stats-widget {
+    position: fixed;
+    top: 8px;
+    left: 320px;
+    right: auto;
+    width: 380px;
+    height: 320px;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    z-index: 9990;
+    pointer-events: none;
+    background: var(--blacksmith-surface-dark-1, #222222);
+    border: 1px solid var(--blacksmith-color-brand-muted, #8d8061);
+    color: var(--blacksmith-text-light, #bdbdae);
+    font-size: 14px;
+    line-height: 1.2;
+}
+
+#herald-stats.herald-stats-widget--hidden {
+    visibility: hidden;
+}
+
+#herald-stats .herald-stats-inner {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#herald-stats .herald-stats-header {
+    flex: 0 0 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    background: var(--blacksmith-surface-dark-0, #0e0c0c);
+    color: var(--blacksmith-color-brand-muted, #8d8061);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#herald-stats .herald-stats-header i {
+    color: var(--blacksmith-color-brand-accent, #c15701);
+}
+
+#herald-stats .herald-stats-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#herald-stats .herald-stats-columns,
+#herald-stats .herald-stats-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 52px 44px 48px;
+    column-gap: 6px;
+    align-items: center;
+    padding: 0 12px;
+    box-sizing: border-box;
+}
+
+#herald-stats .herald-stats-columns {
+    flex: 0 0 24px;
+    height: 24px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--blacksmith-text-muted, #ada39d);
+    background: var(--blacksmith-surface-dark-0, #0e0c0c);
+}
+
+#herald-stats .herald-stats-list {
+    flex: 1 1 auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--blacksmith-color-brand-muted, #8d8061) var(--blacksmith-surface-dark-0, #0e0c0c);
+}
+
+#herald-stats .herald-stats-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+#herald-stats .herald-stats-list::-webkit-scrollbar-thumb {
+    background: var(--blacksmith-color-brand-muted, #8d8061);
+}
+
+#herald-stats .herald-stats-row {
+    min-height: 36px;
+    height: 36px;
+    border-top: 1px solid var(--blacksmith-surface-dark-3, #4b4b4b);
+}
+
+#herald-stats .herald-stats-row:nth-child(odd) {
+    background: var(--blacksmith-surface-dark-1, #222222);
+}
+
+#herald-stats .herald-stats-row:nth-child(even) {
+    background: var(--blacksmith-surface-dark-2, #313030);
+}
+
+#herald-stats .herald-stats-col {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+#herald-stats .herald-stats-col--rank {
+    text-align: center;
+    font-weight: 700;
+    color: var(--blacksmith-status-success, #629602);
+}
+
+#herald-stats .herald-stats-row--first .herald-stats-col--rank {
+    color: #c9a227;
+}
+
+#herald-stats .herald-stats-row--second .herald-stats-col--rank {
+    color: #c0c0c0;
+}
+
+#herald-stats .herald-stats-row--third .herald-stats-col--rank {
+    color: #b87333;
+}
+
+#herald-stats .herald-stats-col--player {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+#herald-stats .herald-stats-portrait {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    border: 1px solid var(--blacksmith-color-brand-muted, #8d8061);
+    background: var(--blacksmith-surface-dark-0, #0e0c0c);
+}
+
+#herald-stats .herald-stats-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--blacksmith-text-inverse, #ffffff);
+    font-weight: 600;
+}
+
+#herald-stats .herald-stats-col--score,
+#herald-stats .herald-stats-col--avg,
+#herald-stats .herald-stats-col--combats {
+    text-align: right;
+}
+
+#herald-stats .herald-stats-empty {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    text-align: center;
+    color: var(--blacksmith-text-muted, #ada39d);
+}

@@ -4,6 +4,7 @@
 
 import { MODULE } from './const.js';
 import { HeraldManager } from './manager-herald.js';
+import { StreamStatsWidget } from './widget-stats.js';
 
 const WORKFLOW_GROUP = 'run-the-game';
 
@@ -342,6 +343,22 @@ export function registerSettings() {
         default: 70,
         range: { min: 1, max: 100, step: 1 },
         group: WORKFLOW_GROUP
+    });
+
+    registerHeader('streamOverlay', 'headingH3StreamOverlay-Label', 'headingH3StreamOverlay-Hint', 'H3');
+
+    game.settings.register(MODULE.ID, 'streamShowMvpLeaderboard', {
+        name: MODULE.ID + '.streamShowMvpLeaderboard-Label',
+        hint: MODULE.ID + '.streamShowMvpLeaderboard-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: Boolean,
+        default: true,
+        group: WORKFLOW_GROUP,
+        onChange: () => {
+            try { StreamStatsWidget.onSettingChanged(); } catch (_) { /* widget mounts only on /stream */ }
+        }
     });
 }
 

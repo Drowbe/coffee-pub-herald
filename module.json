@@ -62,6 +62,7 @@
     "scripts/const.js",
     "scripts/settings.js",
     "scripts/herald-audio.js",
+    "scripts/widget-stats.js",
     "scripts/manager-herald.js",
     "scripts/herald.js"
   ],

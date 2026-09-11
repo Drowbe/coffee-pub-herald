@@ -13,6 +13,7 @@ Foundry VTT **v13 and v14**.
 - **[Getting started](userguides/userguide-getting-started.md)** — the first five minutes: pick a camera user, log it in, see a picture.
 - **[Broadcast modes](userguides/userguide-broadcast-modes.md)** — the nine ways the camera can follow the action, and when each one is the right pick.
 - **[Settings](userguides/userguide-settings.md)** — every setting by its on-screen name.
+- **[Stream overlay](userguides/userguide-stream-widgets.md)** — MVP leaderboard on Foundry's `/stream` page, captured by Coffee Pub Studio.
 - **[GM guide](userguides/userguide-gm.md)** — running a session with a camera: the View Mode menu, the Tools menu, combat.
 - **[Player guide](userguides/userguide-player.md)** — what players see, and what the camera does with their view.
 
@@ -23,6 +24,7 @@ Foundry VTT **v13 and v14**.
 ## For developers
 
 - **[Broadcast architecture](architecture/architecture-broadcast.md)** — how the feature is built and why.
+- **[Stream widgets](architecture/architecture-stream-widgets.md)** — overlays on `/stream` that Studio crops into OBS sources, and the crop contract they must keep.
 - **[Blacksmith APIs](architecture/architecture-blacksmith-integration.md)** — which Blacksmith surfaces Herald consumes, and the contract changes every consumer needs to know.
 - **[Blacksmith sockets](architecture/architecture-blacksmith-sockets.md)** — socket lifetime and the absent unregister API.
 - **[Performance](architecture/architecture-performance.md)** — memory, hot paths, and hook-context cleanup.
