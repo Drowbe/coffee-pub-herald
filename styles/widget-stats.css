@@ -5,6 +5,12 @@
    size this root from content. See architecture-stream-widgets.md.
    ================================================================== */
 
+html.herald-stream-transparent,
+body.stream.herald-stream-transparent {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
 #herald-stats.herald-stats-widget {
     position: fixed;
     top: 8px;

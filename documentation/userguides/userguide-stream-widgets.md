@@ -6,6 +6,12 @@ Foundry's `/stream` page is a capture surface, separate from the cameraman table
 
 This is not the map feed. The cameraman view is still the canvas. These widgets sit on `/stream` so they can be composed in OBS next to that feed, not painted onto it.
 
+## Transparent background
+
+Foundry paints `/stream` lime for chroma key. **Transparent Stream Background** (on by default) replaces that with a transparent page so OBS browser sources and Studio can composite through it. Turn it off if you still want the lime screen.
+
+The MVP widget itself stays opaque so its crop is a clean source.
+
 ## MVP leaderboard
 
 When **Show MVP Leaderboard on Stream** is on, `/stream` shows a fixed box titled **Lifetime MVP** immediately to the right of the chat column. Rank, portrait, name, total score, average, and fight count come from Blacksmith's party statistics — the same ranking as the Party Statistics window and Squire's party panel. It updates when a combat ends.

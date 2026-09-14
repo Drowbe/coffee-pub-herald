@@ -347,6 +347,20 @@ export function registerSettings() {
 
     registerHeader('streamOverlay', 'headingH3StreamOverlay-Label', 'headingH3StreamOverlay-Hint', 'H3');
 
+    game.settings.register(MODULE.ID, 'streamTransparentBackground', {
+        name: MODULE.ID + '.streamTransparentBackground-Label',
+        hint: MODULE.ID + '.streamTransparentBackground-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: Boolean,
+        default: true,
+        group: WORKFLOW_GROUP,
+        onChange: () => {
+            try { StreamStatsWidget.applyPageBackground(); } catch (_) { /* stream view only */ }
+        }
+    });
+
     game.settings.register(MODULE.ID, 'streamShowMvpLeaderboard', {
         name: MODULE.ID + '.streamShowMvpLeaderboard-Label',
         hint: MODULE.ID + '.streamShowMvpLeaderboard-Hint',

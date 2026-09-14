@@ -35,7 +35,7 @@ Studio's selector is matched against the live page. A few habits make the measur
 
 **Nothing on top of it.** OBS captures pixels. A toast, dialog, or chat bubble that overlaps the widget is recorded. The MVP widget uses `z-index: 9990`, under Blacksmith toasts (`10001`). Do not park stream-targeted toasts on the top-right of `/stream` while this widget is live.
 
-**Opaque background.** The crop shows the widget exactly as drawn. An opaque fill (`--blacksmith-surface-dark-1`) gives Studio a clean source. A transparent one lets `/stream`'s page (often a chroma key) show through.
+**Opaque widget background.** The crop shows the widget exactly as drawn. An opaque fill (`--blacksmith-surface-dark-1`) gives Studio a clean source. The *page* behind it is a separate choice: **Transparent Stream Background** (default on) overrides Foundry's hardcoded `body.stream { background: lime }` on `html` and `body` so OBS can composite through the rest of `/stream`.
 
 ## Data
 

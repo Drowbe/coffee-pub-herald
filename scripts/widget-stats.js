@@ -73,6 +73,7 @@ export class StreamStatsWidget {
 
         const first = !this._initialized;
         this._initialized = true;
+        this.applyPageBackground();
         this._ensureRoot();
         this._placeBesideChat();
         this._applyVisibility();
@@ -225,8 +226,9 @@ export class StreamStatsWidget {
                 context: 'herald-stream-stats',
                 priority: 3,
                 callback: (namespace, key) => {
-                    if (namespace !== MODULE.ID || key !== STREAM_STATS.SETTING_KEY) return;
-                    this.onSettingChanged();
+                    if (namespace !== MODULE.ID) return;
+                    if (key === STREAM_STATS.BACKGROUND_KEY) this.applyPageBackground();
+                    if (key === STREAM_STATS.SETTING_KEY) this.onSettingChanged();
                 }
             });
         }
@@ -248,7 +250,29 @@ export class StreamStatsWidget {
         return getSettingSafely(STREAM_STATS.SETTING_KEY, true) === true;
     }
 
+    /**
+     * Foundry hardcodes `body.stream { background: lime }` for chroma key.
+     * OBS browser sources and Studio compositing want a transparent page
+     * instead. Applied inline so that core rule cannot win.
+     */
+    static applyPageBackground() {
+        if (!this.isStreamView()) return;
+        const transparent = getSettingSafely(STREAM_STATS.BACKGROUND_KEY, true) === true;
+        document.documentElement.classList.toggle('herald-stream-transparent', transparent);
+        document.body.classList.toggle('herald-stream-transparent', transparent);
+        for (const el of [document.documentElement, document.body]) {
+            if (transparent) {
+                el.style.setProperty('background', 'transparent', 'important');
+                el.style.setProperty('background-color', 'transparent', 'important');
+            } else {
+                el.style.removeProperty('background');
+                el.style.removeProperty('background-color');
+            }
+        }
+    }
+
     static onSettingChanged() {
+        this.applyPageBackground();
         if (!this._root) return;
         this._applyVisibility();
         if (this._isEnabled()) void this.refresh();

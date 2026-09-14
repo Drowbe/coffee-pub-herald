@@ -26,6 +26,7 @@ export const STREAM_STATS = {
     ROOT_ID: 'herald-stats',
     SELECTOR: '#herald-stats',
     SETTING_KEY: 'streamShowMvpLeaderboard',
+    BACKGROUND_KEY: 'streamTransparentBackground',
     WIDTH: 380,
     HEIGHT: 320,
     GAP: 12,

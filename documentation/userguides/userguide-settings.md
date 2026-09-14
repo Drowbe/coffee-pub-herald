@@ -58,4 +58,6 @@ Every Herald setting by its on-screen name. All of them are world settings — o
 
 These widgets render on Foundry's `/stream` capture page, not on the cameraman tabletop. Coffee Pub Studio crops each one into its own OBS source. See [Stream overlay](userguide-stream-widgets.md).
 
+**Transparent Stream Background** — replaces Foundry's lime `/stream` chroma with a transparent page so OBS and Studio can composite through it. On by default. Turn it off to restore the lime background.
+
 **Show MVP Leaderboard on Stream** — draws the lifetime MVP ranking on `/stream` as a fixed 380 by 320 pixel box immediately to the right of chat. Studio captures it with the selector `#herald-stats`. Turning it off hides the box without removing it, so an existing Studio region keeps a valid crop.
