@@ -2,7 +2,7 @@
 
 **Audience:** developers working on Herald, and on other Coffee Pub modules that consume Blacksmith.
 
-Which Blacksmith surfaces Herald uses, and the contract changes every consumer needs to know. This covers consuming Blacksmith; how Herald's own broadcast feature is built is in [Broadcast architecture](architecture-broadcast.md). Stream overlays that consume `api.stats.party` are in [Stream widgets](architecture-stream-widgets.md).
+Which Blacksmith surfaces Herald uses, and the contract changes every consumer needs to know. This covers consuming Blacksmith; how Herald's own broadcast feature is built is in [Broadcast architecture](architecture-broadcast.md). Stream windows that consume `api.stats.party` are in [Stream widgets](architecture-stream-widgets.md).
 
 ## The API surfaces
 
@@ -112,6 +112,8 @@ Stacks that previously refused to merge now merge. The old predicate compared th
    - `blnNotification=true` shows a user-facing notification (use for actionable errors/warnings).
 
 3. Windows: always use the Window API registry for Application V2 windows (register/open via `api.registerWindow` / `api.openWindow`), rather than ad-hoc window wiring. To *subclass* a Blacksmith window base, import it from the bridge — see Contract Changes §1.
+
+   Herald stream windows are the exception on registration: they open themselves on `/stream` rather than from a toolbar. They still subclass the Tool base, through `HeraldStreamWindowBaseV2`, and they default `toolTitlebar` to `api.toolTitlebars.AUTO` so the OBS crop is the body, not the chrome. Users can still pick Full / Micro / Auto-Hide from the window's Title Bar submenu. Runtime changes go through `await app.setToolTitlebarMode('auto')` — never `this.options.toolTitlebar`.
 
 4. Sockets: use `api.sockets` for sync instead of custom socket globals:
    `api.sockets?.register(eventName, handler)` and `api.sockets?.emit(eventName, data)` (optionally `executeAsGM` for GM-only actions).

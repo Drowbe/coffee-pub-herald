@@ -19,8 +19,18 @@ export const MODULE = {
 };
 
 /**
- * Stream overlay widgets captured by Coffee Pub Studio.
- * The root id is the CSS selector Studio measures; do not change it lightly.
+ * Shared layout for Herald stream tool windows on Foundry's `/stream` page.
+ * Studio crops each window's Application element; keep ids stable.
+ */
+export const STREAM_WINDOW = {
+    GAP: 12,
+    FALLBACK_LEFT: 320,
+    FALLBACK_TOP: 8
+};
+
+/**
+ * Lifetime MVP stream window. The root id is the CSS selector Studio measures;
+ * do not change it lightly.
  */
 export const STREAM_STATS = {
     ROOT_ID: 'herald-stats',
@@ -29,7 +39,5 @@ export const STREAM_STATS = {
     BACKGROUND_KEY: 'streamTransparentBackground',
     WIDTH: 380,
     HEIGHT: 320,
-    GAP: 12,
-    FALLBACK_LEFT: 320,
-    FALLBACK_TOP: 8
+    POSITION_KEY: 'herald-stats-stream'
 };

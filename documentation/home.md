@@ -24,7 +24,7 @@ Foundry VTT **v13 and v14**.
 ## For developers
 
 - **[Broadcast architecture](architecture/architecture-broadcast.md)** — how the feature is built and why.
-- **[Stream widgets](architecture/architecture-stream-widgets.md)** — overlays on `/stream` that Studio crops into OBS sources, and the crop contract they must keep.
+- **[Stream widgets](architecture/architecture-stream-widgets.md)** — Blacksmith tool windows on `/stream` that Studio crops into OBS sources, default Auto-Hide chrome, and the crop contract they must keep.
 - **[Blacksmith APIs](architecture/architecture-blacksmith-integration.md)** — which Blacksmith surfaces Herald consumes, and the contract changes every consumer needs to know.
 - **[Blacksmith sockets](architecture/architecture-blacksmith-sockets.md)** — socket lifetime and the absent unregister API.
 - **[Performance](architecture/architecture-performance.md)** — memory, hot paths, and hook-context cleanup.

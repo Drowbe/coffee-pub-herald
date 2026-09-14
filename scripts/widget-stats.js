@@ -1,19 +1,20 @@
 // ==================================================================
-// ===== STREAM STATS WIDGET ========================================
+// ===== STREAM STATS WINDOW ========================================
 // ==================================================================
-// Overlay for Foundry's /stream capture page. Coffee Pub Studio crops
-// this element into its own OBS source by measuring #herald-stats.
+// Lifetime MVP leaderboard on Foundry's `/stream` capture page.
+// Coffee Pub Studio crops `#herald-stats` into its own OBS source.
 // Habits that make that crop reliable are in
 // documentation/architecture/architecture-stream-widgets.md.
 //
-// Stream detection matches Blacksmith: toasts gate on `game.view ===
-// 'stream'` (api-toast.js); the loading overlay also accepts
-// `body.stream` (manager-loading-progress.js), which is true before
-// `game.view` exists. Layout is inline and JS-owned, same reason as
-// the toast billboard layer: a stale or missing stylesheet must not
-// let this box participate in Foundry's body layout.
+// This is a Blacksmith tool window with Auto-Hide chrome (see
+// HeraldStreamWindowBaseV2). Inner markup is DOM-direct like Blacksmith
+// toasts — no Herald Handlebars template — because a failed template
+// fetch on `/stream` left this box empty. Do not await
+// BlacksmithAPI.waitForReady(): that promise only resolves, and if the
+// stream page never marks consumers ready the overlay stays blank.
 
-import { MODULE, STREAM_STATS } from './const.js';
+import { MODULE, STREAM_STATS, STREAM_WINDOW } from './const.js';
+import { HeraldStreamWindowBaseV2 } from './window-stream-base.js';
 
 function postConsoleAndNotification(strModuleID, message, result, blnDebug, blnNotification) {
     const api = game.modules.get('coffee-pub-blacksmith')?.api;
@@ -37,14 +38,198 @@ function getSettingSafely(key, def) {
     }
 }
 
+export class StreamStatsWindow extends HeraldStreamWindowBaseV2 {
+    static DEFAULT_OPTIONS = foundry.utils.mergeObject(
+        {},
+        {
+            id: STREAM_STATS.ROOT_ID,
+            classes: ['herald-stats-window'],
+            position: {
+                width: STREAM_STATS.WIDTH,
+                height: STREAM_STATS.HEIGHT,
+                left: STREAM_WINDOW.FALLBACK_LEFT,
+                top: STREAM_WINDOW.FALLBACK_TOP
+            },
+            window: { title: 'Lifetime MVP', resizable: false, minimizable: false },
+            windowPositionKey: STREAM_STATS.POSITION_KEY,
+            windowSizeConstraints: {
+                minWidth: STREAM_STATS.WIDTH,
+                maxWidth: STREAM_STATS.WIDTH,
+                minHeight: STREAM_STATS.HEIGHT,
+                maxHeight: STREAM_STATS.HEIGHT
+            }
+        }
+    );
+
+    constructor(options = {}) {
+        super(options);
+        this._lastData = null;
+    }
+
+    isStreamContentEnabled() {
+        return getSettingSafely(STREAM_STATS.SETTING_KEY, true) === true;
+    }
+
+    async onStreamDismissed() {
+        try {
+            const setting = game.settings.settings.get(`${MODULE.ID}.${STREAM_STATS.SETTING_KEY}`);
+            if (!setting) return;
+            if (game.settings.get(MODULE.ID, STREAM_STATS.SETTING_KEY) === false) return;
+            await game.settings.set(MODULE.ID, STREAM_STATS.SETTING_KEY, false);
+        } catch (_) { /* settings may not be registered yet */ }
+    }
+
+    async _onRender(context, options) {
+        await super._onRender(context, options);
+        this._paint(this._lastData ?? { hasLeaderboard: false, emptyMessage: 'Loading…' });
+    }
+
+    async refresh() {
+        this._lastData = await this._getData();
+        this._paint(this._lastData);
+    }
+
+    _body() {
+        return this.element?.querySelector('.blacksmith-window-tool-body') ?? null;
+    }
+
+    _paint(data) {
+        const body = this._body();
+        if (!body || !data) return;
+
+        const inner = document.createElement('div');
+        inner.className = 'herald-stats-inner';
+
+        const header = document.createElement('header');
+        header.className = 'herald-stats-header';
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid fa-trophy';
+        icon.setAttribute('aria-hidden', 'true');
+        const title = document.createElement('span');
+        title.className = 'herald-stats-title';
+        title.textContent = 'Lifetime MVP';
+        header.append(icon, title);
+        inner.appendChild(header);
+
+        if (data.hasLeaderboard && data.leaderboard.length) {
+            const cols = document.createElement('div');
+            cols.className = 'herald-stats-columns';
+            cols.setAttribute('aria-hidden', 'true');
+            for (const [cls, label] of [
+                ['herald-stats-col--rank', '#'],
+                ['herald-stats-col--player', 'Player'],
+                ['herald-stats-col--score', 'Total'],
+                ['herald-stats-col--avg', 'Avg'],
+                ['herald-stats-col--combats', 'Fights']
+            ]) {
+                const span = document.createElement('span');
+                span.className = `herald-stats-col ${cls}`;
+                span.textContent = label;
+                cols.appendChild(span);
+            }
+            inner.appendChild(cols);
+
+            const list = document.createElement('ol');
+            list.className = 'herald-stats-list';
+            for (const row of data.leaderboard) {
+                list.appendChild(this._paintRow(row));
+            }
+            inner.appendChild(list);
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'herald-stats-empty';
+            empty.textContent = data.emptyMessage || 'No MVP rankings yet.';
+            inner.appendChild(empty);
+        }
+
+        body.replaceChildren(inner);
+    }
+
+    _paintRow(row) {
+        const li = document.createElement('li');
+        li.className = `herald-stats-row ${row.rankClass || ''}`.trim();
+
+        const rank = document.createElement('span');
+        rank.className = 'herald-stats-col herald-stats-col--rank';
+        rank.textContent = String(row.rank);
+
+        const player = document.createElement('span');
+        player.className = 'herald-stats-col herald-stats-col--player';
+        const img = document.createElement('img');
+        img.className = 'herald-stats-portrait';
+        img.src = row.img;
+        img.alt = '';
+        const name = document.createElement('span');
+        name.className = 'herald-stats-name';
+        name.textContent = row.name;
+        player.append(img, name);
+
+        const score = document.createElement('span');
+        score.className = 'herald-stats-col herald-stats-col--score';
+        score.textContent = String(row.totalScore);
+
+        const avg = document.createElement('span');
+        avg.className = 'herald-stats-col herald-stats-col--avg';
+        avg.textContent = String(row.averageScore);
+
+        const combats = document.createElement('span');
+        combats.className = 'herald-stats-col herald-stats-col--combats';
+        combats.textContent = String(row.combats);
+
+        li.append(rank, player, score, avg, combats);
+        return li;
+    }
+
+    async _getData() {
+        const payload = {
+            hasBlacksmith: false,
+            hasLeaderboard: false,
+            leaderboard: [],
+            emptyMessage: 'No MVP rankings yet.'
+        };
+
+        const api = game.modules.get('coffee-pub-blacksmith')?.api;
+        const partyApi = api?.stats?.party;
+        if (!partyApi || typeof partyApi.getAggregate !== 'function') {
+            payload.emptyMessage = 'Blacksmith stats are unavailable.';
+            return payload;
+        }
+        payload.hasBlacksmith = true;
+
+        try {
+            const aggregate = await partyApi.getAggregate();
+            const rows = Array.isArray(aggregate?.leaderboard) ? aggregate.leaderboard : [];
+            payload.leaderboard = rows.map((entry, index) => {
+                const rank = Number(entry.rank) || (index + 1);
+                const mvp = entry.mvp || {};
+                return {
+                    rank,
+                    rankClass: rank === 1 ? 'herald-stats-row--first' : rank === 2 ? 'herald-stats-row--second' : rank === 3 ? 'herald-stats-row--third' : '',
+                    actorId: entry.actorId,
+                    name: entry.name || 'Unknown',
+                    img: entry.img || 'icons/svg/mystery-man.svg',
+                    totalScore: mvp.totalScore ?? '0.0',
+                    averageScore: mvp.averageScore ?? '0.0',
+                    combats: mvp.combats ?? 0
+                };
+            });
+            payload.hasLeaderboard = payload.leaderboard.length > 0;
+        } catch (error) {
+            postConsoleAndNotification(MODULE.NAME, 'StreamStatsWindow: failed to load party aggregate', error?.message ?? error, false, false);
+            payload.emptyMessage = 'Could not load MVP rankings.';
+        }
+
+        return payload;
+    }
+}
+
 export class StreamStatsWidget {
-    static _initialized = false;
-    static _root = null;
+    static _window = null;
+    static _opening = null;
+    static _mounted = false;
     static _refreshTimer = null;
-    static _placeTimer = null;
+    static _hooksRegistered = false;
     static _nativeHookFns = [];
-    static _left = STREAM_STATS.FALLBACK_LEFT;
-    static _top = STREAM_STATS.FALLBACK_TOP;
 
     /**
      * Same capture-page tests Blacksmith uses.
@@ -71,93 +256,45 @@ export class StreamStatsWidget {
             return;
         }
 
-        const first = !this._initialized;
-        this._initialized = true;
         this.applyPageBackground();
-        this._ensureRoot();
-        this._placeBesideChat();
-        this._applyVisibility();
-        if (first) {
+        if (!this._hooksRegistered) {
             this._registerHooks();
-            // Paint immediately so the box is never an empty rectangle while
-            // stats load. Blacksmith's waitForReady() only resolves — if the
-            // stream page never marks consumers ready, awaiting it leaves this
-            // overlay black forever.
-            this._paint({ hasLeaderboard: false, emptyMessage: 'Loading…' });
-            postConsoleAndNotification(MODULE.NAME, 'StreamStatsWidget: mounted', { selector: STREAM_STATS.SELECTOR }, false, false);
+            this._hooksRegistered = true;
         }
-        void this.refresh();
-    }
-
-    static _ensureRoot() {
-        let root = document.getElementById(STREAM_STATS.ROOT_ID);
-        if (!root) {
-            root = document.createElement('aside');
-            root.id = STREAM_STATS.ROOT_ID;
-            root.className = 'herald-stats-widget';
-            root.setAttribute('data-herald-widget', 'mvp-leaderboard');
-            root.setAttribute('aria-label', 'Lifetime MVP leaderboard');
-            document.body.appendChild(root);
-        }
-        this._root = root;
-        this._applyInlineBox(this._left, this._top);
-    }
-
-    /**
-     * Sit immediately to the right of Foundry's stream chat column.
-     * Size and position are whole pixels and inline so Studio's crop
-     * does not depend on module CSS winning against body.stream rules.
-     */
-    static _placeBesideChat() {
-        if (!this._root) return;
-        const chat = this._findChatColumn();
-        let left = STREAM_STATS.FALLBACK_LEFT;
-        let top = STREAM_STATS.FALLBACK_TOP;
-        if (chat) {
-            const r = chat.getBoundingClientRect();
-            if (r.width > 0) {
-                left = Math.round(r.right) + STREAM_STATS.GAP;
-                top = Math.round(Math.max(STREAM_STATS.FALLBACK_TOP, r.top));
+        void this._ensureWindow().then((win) => {
+            if (!win) return;
+            if (!this._mounted) {
+                this._mounted = true;
+                postConsoleAndNotification(MODULE.NAME, 'StreamStatsWidget: mounted', { selector: STREAM_STATS.SELECTOR }, false, false);
             }
-        }
-        this._left = left;
-        this._top = top;
-        this._applyInlineBox(left, top);
+            void this.refresh();
+        });
     }
 
-    static _findChatColumn() {
-        for (const selector of ['#chat', 'section#chat', '#chat-log', '#chat-notifications']) {
-            const el = document.querySelector(selector);
-            if (!el) continue;
-            const r = el.getBoundingClientRect();
-            if (r.width > 0 && r.height > 0) return el;
+    static async _ensureWindow() {
+        if (this._opening) return this._opening;
+        this._opening = (async () => {
+            try {
+                if (!this._window) this._window = new StreamStatsWindow();
+                if (!this._window.rendered) await this._window.render({ force: true });
+                this._window.syncStreamVisibility();
+                return this._window;
+            } catch (error) {
+                postConsoleAndNotification(
+                    MODULE.NAME,
+                    'StreamStatsWidget: failed to render stream window',
+                    error?.message ?? error,
+                    false,
+                    false
+                );
+                return null;
+            }
+        })();
+        try {
+            return await this._opening;
+        } finally {
+            this._opening = null;
         }
-        return null;
-    }
-
-    static _applyInlineBox(left, top) {
-        const root = this._root;
-        if (!root) return;
-        const hidden = !this._isEnabled();
-        const set = (prop, value) => root.style.setProperty(prop, value, 'important');
-        set('position', 'fixed');
-        set('top', `${top}px`);
-        set('left', `${left}px`);
-        set('right', 'auto');
-        set('width', `${STREAM_STATS.WIDTH}px`);
-        set('height', `${STREAM_STATS.HEIGHT}px`);
-        set('margin', '0');
-        set('padding', '0');
-        set('box-sizing', 'border-box');
-        set('overflow', 'hidden');
-        set('z-index', '9990');
-        set('pointer-events', 'none');
-        set('display', 'block');
-        set('visibility', hidden ? 'hidden' : 'visible');
-        set('background', '#222222');
-        set('border', '1px solid #8d8061');
-        set('color', '#bdbdae');
-        set('transform', 'none');
     }
 
     static _registerHooks() {
@@ -206,7 +343,7 @@ export class StreamStatsWidget {
         );
         register(
             'renderChatLog',
-            'Herald stream stats: place the widget beside chat once the log exists',
+            'Herald stream stats: place the window beside chat once the log exists',
             () => this._placeBesideChat()
         );
         register(
@@ -216,9 +353,6 @@ export class StreamStatsWidget {
         );
 
         window.addEventListener('resize', () => this._placeBesideChat());
-
-        if (this._placeTimer) clearTimeout(this._placeTimer);
-        this._placeTimer = setTimeout(() => this._placeBesideChat(), 250);
 
         if (canManage && typeof hookManager.registerSettingChangeCallback === 'function') {
             hookManager.registerSettingChangeCallback({
@@ -273,24 +407,20 @@ export class StreamStatsWidget {
 
     static onSettingChanged() {
         this.applyPageBackground();
-        if (!this._root) return;
-        this._applyVisibility();
-        if (this._isEnabled()) void this.refresh();
+        if (!this.isStreamView()) return;
+        void this._ensureWindow().then((win) => {
+            if (!win) return;
+            win.syncStreamVisibility();
+            if (this._isEnabled()) void this.refresh();
+        });
     }
 
-    /**
-     * Hide with visibility, never display:none or remove. Studio measures
-     * this box on every sync; a missing element makes the selector fail and
-     * OBS keeps the last crop over whatever is now underneath.
-     */
-    static _applyVisibility() {
-        this._applyInlineBox(this._left, this._top);
-        if (!this._root) return;
-        this._root.classList.toggle('herald-stats-widget--hidden', !this._isEnabled());
+    static _placeBesideChat() {
+        this._window?._placeBesideChat?.();
     }
 
     static _scheduleRefresh() {
-        if (!this._root || !this._isEnabled()) return;
+        if (!this._window?.rendered || !this._isEnabled()) return;
         if (this._refreshTimer) clearTimeout(this._refreshTimer);
         this._refreshTimer = setTimeout(() => {
             this._refreshTimer = null;
@@ -299,142 +429,8 @@ export class StreamStatsWidget {
     }
 
     static async refresh() {
-        if (!this._root) return;
-        this._paint(await this._getData());
-    }
-
-    /**
-     * DOM-direct, same as Blacksmith toasts. Handlebars is not used: the
-     * /stream page is a thin capture surface, and a failed template fetch
-     * left this box empty. Names land via textContent.
-     */
-    static _paint(data) {
-        const root = this._root;
-        if (!root) return;
-
-        const inner = document.createElement('div');
-        inner.className = 'herald-stats-inner';
-
-        const header = document.createElement('header');
-        header.className = 'herald-stats-header';
-        const icon = document.createElement('i');
-        icon.className = 'fa-solid fa-trophy';
-        icon.setAttribute('aria-hidden', 'true');
-        const title = document.createElement('span');
-        title.className = 'herald-stats-title';
-        title.textContent = 'Lifetime MVP';
-        header.append(icon, title);
-        inner.appendChild(header);
-
-        if (data.hasLeaderboard && data.leaderboard.length) {
-            const cols = document.createElement('div');
-            cols.className = 'herald-stats-columns';
-            cols.setAttribute('aria-hidden', 'true');
-            for (const [cls, label] of [
-                ['herald-stats-col--rank', '#'],
-                ['herald-stats-col--player', 'Player'],
-                ['herald-stats-col--score', 'Total'],
-                ['herald-stats-col--avg', 'Avg'],
-                ['herald-stats-col--combats', 'Fights']
-            ]) {
-                const span = document.createElement('span');
-                span.className = `herald-stats-col ${cls}`;
-                span.textContent = label;
-                cols.appendChild(span);
-            }
-            inner.appendChild(cols);
-
-            const list = document.createElement('ol');
-            list.className = 'herald-stats-list';
-            for (const row of data.leaderboard) {
-                list.appendChild(this._paintRow(row));
-            }
-            inner.appendChild(list);
-        } else {
-            const empty = document.createElement('div');
-            empty.className = 'herald-stats-empty';
-            empty.textContent = data.emptyMessage || 'No MVP rankings yet.';
-            inner.appendChild(empty);
-        }
-
-        root.replaceChildren(inner);
-    }
-
-    static _paintRow(row) {
-        const li = document.createElement('li');
-        li.className = `herald-stats-row ${row.rankClass || ''}`.trim();
-
-        const rank = document.createElement('span');
-        rank.className = 'herald-stats-col herald-stats-col--rank';
-        rank.textContent = String(row.rank);
-
-        const player = document.createElement('span');
-        player.className = 'herald-stats-col herald-stats-col--player';
-        const img = document.createElement('img');
-        img.className = 'herald-stats-portrait';
-        img.src = row.img;
-        img.alt = '';
-        const name = document.createElement('span');
-        name.className = 'herald-stats-name';
-        name.textContent = row.name;
-        player.append(img, name);
-
-        const score = document.createElement('span');
-        score.className = 'herald-stats-col herald-stats-col--score';
-        score.textContent = String(row.totalScore);
-
-        const avg = document.createElement('span');
-        avg.className = 'herald-stats-col herald-stats-col--avg';
-        avg.textContent = String(row.averageScore);
-
-        const combats = document.createElement('span');
-        combats.className = 'herald-stats-col herald-stats-col--combats';
-        combats.textContent = String(row.combats);
-
-        li.append(rank, player, score, avg, combats);
-        return li;
-    }
-
-    static async _getData() {
-        const payload = {
-            hasBlacksmith: false,
-            hasLeaderboard: false,
-            leaderboard: [],
-            emptyMessage: 'No MVP rankings yet.'
-        };
-
-        const api = game.modules.get('coffee-pub-blacksmith')?.api;
-        const partyApi = api?.stats?.party;
-        if (!partyApi || typeof partyApi.getAggregate !== 'function') {
-            payload.emptyMessage = 'Blacksmith stats are unavailable.';
-            return payload;
-        }
-        payload.hasBlacksmith = true;
-
-        try {
-            const aggregate = await partyApi.getAggregate();
-            const rows = Array.isArray(aggregate?.leaderboard) ? aggregate.leaderboard : [];
-            payload.leaderboard = rows.map((entry, index) => {
-                const rank = Number(entry.rank) || (index + 1);
-                const mvp = entry.mvp || {};
-                return {
-                    rank,
-                    rankClass: rank === 1 ? 'herald-stats-row--first' : rank === 2 ? 'herald-stats-row--second' : rank === 3 ? 'herald-stats-row--third' : '',
-                    actorId: entry.actorId,
-                    name: entry.name || 'Unknown',
-                    img: entry.img || 'icons/svg/mystery-man.svg',
-                    totalScore: mvp.totalScore ?? '0.0',
-                    averageScore: mvp.averageScore ?? '0.0',
-                    combats: mvp.combats ?? 0
-                };
-            });
-            payload.hasLeaderboard = payload.leaderboard.length > 0;
-        } catch (error) {
-            postConsoleAndNotification(MODULE.NAME, 'StreamStatsWidget: failed to load party aggregate', error?.message ?? error, false, false);
-            payload.emptyMessage = 'Could not load MVP rankings.';
-        }
-
-        return payload;
+        if (!this._window?.rendered) return;
+        await this._window.refresh();
     }
 
     static cleanup() {
@@ -442,17 +438,16 @@ export class StreamStatsWidget {
             clearTimeout(this._refreshTimer);
             this._refreshTimer = null;
         }
-        if (this._placeTimer) {
-            clearTimeout(this._placeTimer);
-            this._placeTimer = null;
-        }
         game.modules.get('coffee-pub-blacksmith')?.api?.HookManager?.disposeByContext('herald-stream-stats');
         for (const { name, callback } of this._nativeHookFns) {
             Hooks.off(name, callback);
         }
         this._nativeHookFns = [];
-        this._root?.remove();
-        this._root = null;
-        this._initialized = false;
+        this._hooksRegistered = false;
+        this._mounted = false;
+        this._opening = null;
+        const win = this._window;
+        this._window = null;
+        void win?.close({ heraldForce: true });
     }
 }

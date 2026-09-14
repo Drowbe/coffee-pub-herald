@@ -1,7 +1,8 @@
 /* ==================================================================
-   ===== STREAM STATS WIDGET ========================================
-   Cropped by Coffee Pub Studio from Foundry's /stream page.
-   The measured box is #herald-stats. Do not animate, transform, or
+   ===== STREAM WINDOWS =============================================
+   Cropped by Coffee Pub Studio from Foundry's `/stream` page.
+   The measured box is the Application element (e.g. #herald-stats).
+   Auto-Hide chrome lives in Blacksmith; do not animate, transform, or
    size this root from content. See architecture-stream-widgets.md.
    ================================================================== */
 
@@ -11,66 +12,75 @@ body.stream.herald-stream-transparent {
     background-color: transparent !important;
 }
 
-#herald-stats.herald-stats-widget {
-    position: fixed;
-    top: 8px;
-    left: 320px;
-    right: auto;
+body.stream .application.herald-stream-window {
+    display: flex !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    box-shadow: none !important;
+    overflow: hidden;
+}
+
+body.stream .application.herald-stream-window.herald-stream-window--hidden,
+.application.herald-stream-window.herald-stream-window--hidden {
+    visibility: hidden !important;
+}
+
+.application.herald-stats-window {
     width: 380px;
     height: 320px;
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+}
+
+.application.herald-stats-window .blacksmith-window-tool-root,
+.application.herald-stats-window .blacksmith-window-tool-body {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
     overflow: hidden;
-    z-index: 9990;
-    pointer-events: none;
-    background: var(--blacksmith-surface-dark-1, #222222);
-    border: 1px solid var(--blacksmith-color-brand-muted, #8d8061);
-    color: var(--blacksmith-text-light, #bdbdae);
-    font-size: 14px;
-    line-height: 1.2;
 }
 
-#herald-stats.herald-stats-widget--hidden {
-    visibility: hidden;
-}
-
-#herald-stats .herald-stats-inner {
+.application.herald-stats-window .herald-stats-inner {
     box-sizing: border-box;
     width: 100%;
     height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    font-size: 14px;
+    line-height: 1.2;
 }
 
-#herald-stats .herald-stats-header {
+.application.herald-stats-window .herald-stats-header {
     flex: 0 0 40px;
     height: 40px;
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 0 12px;
-    background: var(--blacksmith-surface-dark-0, #0e0c0c);
-    color: var(--blacksmith-color-brand-muted, #8d8061);
+    background: var(--blacksmith-tool-surface-raised);
+    color: var(--blacksmith-tool-accent);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-size: 12px;
     font-weight: 700;
 }
 
-#herald-stats .herald-stats-header i {
+.application.herald-stats-window.blacksmith-window-tool-theme-glass .herald-stats-header,
+.application.herald-stats-window.blacksmith-window-tool-theme-glass .herald-stats-columns {
+    backdrop-filter: blur(6px);
+}
+
+.application.herald-stats-window .herald-stats-header i {
     color: var(--blacksmith-color-brand-accent, #c15701);
 }
 
-#herald-stats .herald-stats-title {
+.application.herald-stats-window .herald-stats-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-#herald-stats .herald-stats-columns,
-#herald-stats .herald-stats-row {
+.application.herald-stats-window .herald-stats-columns,
+.application.herald-stats-window .herald-stats-row {
     display: grid;
     grid-template-columns: 28px minmax(0, 1fr) 52px 44px 48px;
     column-gap: 6px;
@@ -79,18 +89,18 @@ body.stream.herald-stream-transparent {
     box-sizing: border-box;
 }
 
-#herald-stats .herald-stats-columns {
+.application.herald-stats-window .herald-stats-columns {
     flex: 0 0 24px;
     height: 24px;
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--blacksmith-text-muted, #ada39d);
-    background: var(--blacksmith-surface-dark-0, #0e0c0c);
+    color: var(--blacksmith-tool-text-muted);
+    background: var(--blacksmith-tool-surface-raised);
 }
 
-#herald-stats .herald-stats-list {
+.application.herald-stats-window .herald-stats-list {
     flex: 1 1 auto;
     margin: 0;
     padding: 0;
@@ -98,93 +108,93 @@ body.stream.herald-stream-transparent {
     overflow-x: hidden;
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: var(--blacksmith-color-brand-muted, #8d8061) var(--blacksmith-surface-dark-0, #0e0c0c);
+    scrollbar-color: var(--blacksmith-tool-accent) var(--blacksmith-tool-surface-sunken);
 }
 
-#herald-stats .herald-stats-list::-webkit-scrollbar {
+.application.herald-stats-window .herald-stats-list::-webkit-scrollbar {
     width: 6px;
 }
 
-#herald-stats .herald-stats-list::-webkit-scrollbar-thumb {
-    background: var(--blacksmith-color-brand-muted, #8d8061);
+.application.herald-stats-window .herald-stats-list::-webkit-scrollbar-thumb {
+    background: var(--blacksmith-tool-accent);
 }
 
-#herald-stats .herald-stats-row {
+.application.herald-stats-window .herald-stats-row {
     min-height: 36px;
     height: 36px;
-    border-top: 1px solid var(--blacksmith-surface-dark-3, #4b4b4b);
+    border-top: 1px solid var(--blacksmith-tool-divider);
 }
 
-#herald-stats .herald-stats-row:nth-child(odd) {
-    background: var(--blacksmith-surface-dark-1, #222222);
+.application.herald-stats-window .herald-stats-row:nth-child(odd) {
+    background: var(--blacksmith-tool-background);
 }
 
-#herald-stats .herald-stats-row:nth-child(even) {
-    background: var(--blacksmith-surface-dark-2, #313030);
+.application.herald-stats-window .herald-stats-row:nth-child(even) {
+    background: var(--blacksmith-tool-surface-raised);
 }
 
-#herald-stats .herald-stats-col {
+.application.herald-stats-window .herald-stats-col {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
 
-#herald-stats .herald-stats-col--rank {
+.application.herald-stats-window .herald-stats-col--rank {
     text-align: center;
     font-weight: 700;
     color: var(--blacksmith-status-success, #629602);
 }
 
-#herald-stats .herald-stats-row--first .herald-stats-col--rank {
+.application.herald-stats-window .herald-stats-row--first .herald-stats-col--rank {
     color: #c9a227;
 }
 
-#herald-stats .herald-stats-row--second .herald-stats-col--rank {
+.application.herald-stats-window .herald-stats-row--second .herald-stats-col--rank {
     color: #c0c0c0;
 }
 
-#herald-stats .herald-stats-row--third .herald-stats-col--rank {
+.application.herald-stats-window .herald-stats-row--third .herald-stats-col--rank {
     color: #b87333;
 }
 
-#herald-stats .herald-stats-col--player {
+.application.herald-stats-window .herald-stats-col--player {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
 }
 
-#herald-stats .herald-stats-portrait {
+.application.herald-stats-window .herald-stats-portrait {
     flex: 0 0 28px;
     width: 28px;
     height: 28px;
     object-fit: cover;
-    border: 1px solid var(--blacksmith-color-brand-muted, #8d8061);
-    background: var(--blacksmith-surface-dark-0, #0e0c0c);
+    border: 1px solid var(--blacksmith-tool-border);
+    background: var(--blacksmith-tool-surface-sunken);
 }
 
-#herald-stats .herald-stats-name {
+.application.herald-stats-window .herald-stats-name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--blacksmith-text-inverse, #ffffff);
+    color: var(--blacksmith-tool-text);
     font-weight: 600;
 }
 
-#herald-stats .herald-stats-col--score,
-#herald-stats .herald-stats-col--avg,
-#herald-stats .herald-stats-col--combats {
+.application.herald-stats-window .herald-stats-col--score,
+.application.herald-stats-window .herald-stats-col--avg,
+.application.herald-stats-window .herald-stats-col--combats {
     text-align: right;
 }
 
-#herald-stats .herald-stats-empty {
+.application.herald-stats-window .herald-stats-empty {
     flex: 1 1 auto;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 12px;
     text-align: center;
-    color: var(--blacksmith-text-muted, #ada39d);
+    color: var(--blacksmith-tool-text-muted);
 }

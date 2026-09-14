@@ -58,7 +58,7 @@
         "streamTransparentBackground-Label": "Transparent Stream Background",
         "streamTransparentBackground-Hint": "Replace Foundry's lime /stream chroma with a transparent page so OBS and Studio can composite through it. Off restores the lime background. Takes effect on the /stream view without a reload.",
         "streamShowMvpLeaderboard-Label": "Show MVP Leaderboard on Stream",
-        "streamShowMvpLeaderboard-Hint": "Show the lifetime MVP leaderboard on Foundry's /stream view. Coffee Pub Studio captures it with the CSS selector #herald-stats. The widget stays in the page when hidden so the crop does not jump.",
+        "streamShowMvpLeaderboard-Hint": "Show the lifetime MVP leaderboard on Foundry's /stream view as a Blacksmith tool window. The title bar Auto-Hides so Coffee Pub Studio can crop #herald-stats without chrome. The window stays in the page when hidden so the crop does not jump.",
         "combatAutoSwitch-no-change": "No change",
         "notification-not-enabled": "Broadcast is not enabled.",
         "notification-no-combat": "No active combat. Start combat first.",

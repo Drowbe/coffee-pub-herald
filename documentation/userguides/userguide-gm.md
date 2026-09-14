@@ -53,4 +53,4 @@ For anything that gets stuck, the **Tools** submenu has:
 
 ## Stream overlay
 
-The cameraman tabletop is the map feed. Foundry's `/stream` page is a separate capture surface. Herald can draw overlays there for Coffee Pub Studio to crop into their own OBS sources — starting with the lifetime MVP leaderboard. That widget does not appear on your tabletop or on the camera's map. See [Stream overlay](userguide-stream-widgets.md).
+The cameraman tabletop is the map feed. Foundry's `/stream` page is a separate capture surface. Herald draws Blacksmith tool windows there for Coffee Pub Studio to crop into their own OBS sources — starting with the lifetime MVP leaderboard. Those windows do not appear on your tabletop or on the camera's map. See [Stream overlay](userguide-stream-widgets.md).

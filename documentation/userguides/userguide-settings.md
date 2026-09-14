@@ -60,4 +60,4 @@ These widgets render on Foundry's `/stream` capture page, not on the cameraman t
 
 **Transparent Stream Background** — replaces Foundry's lime `/stream` chroma with a transparent page so OBS and Studio can composite through it. On by default. Turn it off to restore the lime background.
 
-**Show MVP Leaderboard on Stream** — draws the lifetime MVP ranking on `/stream` as a fixed 380 by 320 pixel box immediately to the right of chat. Studio captures it with the selector `#herald-stats`. Turning it off hides the box without removing it, so an existing Studio region keeps a valid crop.
+**Show MVP Leaderboard on Stream** — draws the lifetime MVP ranking on `/stream` as a 380 by 320 pixel Blacksmith tool window. Studio captures it with the selector `#herald-stats`. The title bar Auto-Hides so the crop is the board, not the chrome. Turning it off (or closing the window) hides the box without removing it, so an existing Studio region keeps a valid crop.

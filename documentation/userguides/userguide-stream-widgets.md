@@ -2,19 +2,25 @@
 
 **Audience:** GMs capturing Herald widgets with Coffee Pub Studio.
 
-Foundry's `/stream` page is a capture surface, separate from the cameraman tabletop. Herald can draw small overlays there so Studio can crop each one into its own OBS source. The first of these is the lifetime MVP leaderboard.
+Foundry's `/stream` page is a capture surface, separate from the cameraman tabletop. Herald draws small tool windows there so Studio can crop each one into its own OBS source. The first of these is the lifetime MVP leaderboard.
 
-This is not the map feed. The cameraman view is still the canvas. These widgets sit on `/stream` so they can be composed in OBS next to that feed, not painted onto it.
+This is not the map feed. The cameraman view is still the canvas. These windows sit on `/stream` so they can be composed in OBS next to that feed, not painted onto it.
 
 ## Transparent background
 
 Foundry paints `/stream` lime for chroma key. **Transparent Stream Background** (on by default) replaces that with a transparent page so OBS browser sources and Studio can composite through it. Turn it off if you still want the lime screen.
 
-The MVP widget itself stays opaque so its crop is a clean source.
+The MVP window itself stays opaque in its default Dark theme so its crop is a clean source.
+
+## Title bar
+
+Each stream window uses Blacksmith's **Auto-Hide** title bar. At rest you see the content and almost no chrome, which is what OBS captures. Hover the top edge, or tab into the window, and the full bar (title, menu, Close) slides over the content without moving it. Right-click the window and open **Title Bar** to switch between Full, Micro, and Auto-Hide; Herald remembers your choice.
+
+You can drag a stream window to park it. Studio re-measures on every sync, so the crop follows. Closing it hides it without removing it, the same as turning the setting off.
 
 ## MVP leaderboard
 
-When **Show MVP Leaderboard on Stream** is on, `/stream` shows a fixed box titled **Lifetime MVP** immediately to the right of the chat column. Rank, portrait, name, total score, average, and fight count come from Blacksmith's party statistics — the same ranking as the Party Statistics window and Squire's party panel. It updates when a combat ends.
+When **Show MVP Leaderboard on Stream** is on, `/stream` shows a 380 by 320 pixel window titled **Lifetime MVP**. The first time it opens it sits immediately to the right of the chat column. Rank, portrait, name, total score, average, and fight count come from Blacksmith's party statistics — the same ranking as the Party Statistics window and Squire's party panel. It updates when a combat ends.
 
 The box stays the same size whether the party is two people or ten. Extra rows scroll inside it. With no rankings yet, the box still sits there with an empty line rather than vanishing.
 
@@ -28,13 +34,13 @@ It does not appear on the GM's screen, on a player's screen, or on the cameraman
 4. Enter `#herald-stats`.
 5. Click **Measure**.
 
-The measured size should be 380 by 320 pixels, immediately to the right of the chat column. The OBS source should show only the widget: dark background, title, rows. If the crop includes chat or a slice of green screen, the selector is wrong or the widget is not on `/stream`.
+The measured size should be 380 by 320 pixels. The OBS source should show only the widget: themed background, title, rows. If the crop includes chat or a slice of green screen, the selector is wrong or the widget is not on `/stream`.
 
 Leave the selector as `#herald-stats`. Studio re-measures on every sync; a stable id is what makes that reliable.
 
 ## Turning it off
 
-Uncheck **Show MVP Leaderboard on Stream** in Herald's settings. The box hides but is not removed, so a Studio region already pointed at `#herald-stats` keeps a valid crop instead of snapping onto whatever is underneath.
+Uncheck **Show MVP Leaderboard on Stream** in Herald's settings, or close the window from its Auto-Hide title bar. The box hides but is not removed, so a Studio region already pointed at `#herald-stats` keeps a valid crop instead of snapping onto whatever is underneath.
 
 ## Settings
 
