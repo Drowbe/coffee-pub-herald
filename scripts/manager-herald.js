@@ -144,6 +144,12 @@ export class HeraldManager {
      */
     static TOAST_WATCHDOG_POLL_MS = 1000;
 
+    /** Poll cadence for the Studio recording indicator. Studio answers from its own internal
+     *  2s OBS poll cache, so polling faster than that gains nothing. */
+    static STUDIO_STATUS_POLL_MS = 2500;
+    static _studioStatusPollIntervalId = null;
+    static _studioLastRecording = null; // null = unknown yet; avoids a redundant menubar re-register per tick
+
     /**
      * Settings read heavily during camera follow / pan / zoom paths.
      * Refreshed in `initialize()` and when any listed key changes (`broadcast-settings` hook).
@@ -265,6 +271,11 @@ this._blacksmith.HookManager.registerHook({
 
                 if (moduleId === MODULE.ID && settingKey === 'broadcastShowCombatBar') {
                     this._combatBarVisibilityOverride = null;
+                }
+
+                if (moduleId === MODULE.ID && (settingKey === 'studioApiUrl' || settingKey === 'studioApiToken')) {
+                    this._studioCapabilitiesCache = null;
+                    if (game.user?.isGM) this._startStudioStatusPoll();
                 }
 
                 if (moduleId === MODULE.ID && (
@@ -3312,11 +3323,27 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         const api = this._blacksmith;
         if (!api || typeof api.registerMenubarTool !== 'function') return;
 
-        const success = api.registerMenubarTool('studio-obs', {
-            icon: 'fa-solid fa-clapperboard',
+        const success = api.registerMenubarTool('studio-obs', this._studioMenubarToolConfig(false));
+
+        if (success) {
+            postConsoleAndNotification(MODULE.NAME, "HeraldManager: OBS menubar button registered", "", true, false);
+            if (game.user?.isGM) this._startStudioStatusPoll();
+        } else {
+            postConsoleAndNotification(MODULE.NAME, "HeraldManager: Failed to register OBS menubar button", "", false, false);
+        }
+    }
+
+    /**
+     * registerMenubarTool config for the Studio button. `recording` swaps both icon and
+     * iconColor together (a plain iconColor-only change is too subtle to read as "recording").
+     * @private
+     */
+    static _studioMenubarToolConfig(recording) {
+        return {
+            icon: recording ? 'fa-solid fa-circle-dot' : 'fa-solid fa-clapperboard',
             name: 'studio-obs',
             title: () => 'Studio',
-            tooltip: () => 'Studio commands',
+            tooltip: () => recording ? 'Studio commands (recording)' : 'Studio commands',
             zone: 'right',
             group: 'general',
             groupOrder: 998,
@@ -3327,7 +3354,7 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             visible: () => true,
             toggleable: false,
             active: false,
-            iconColor: null,
+            iconColor: recording ? '#c9412d' : null,
             buttonNormalTint: null,
             buttonSelectedTint: null,
             onClick: async (event) => {
@@ -3335,12 +3362,71 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                 if (zones) this._showBlacksmithContextMenu(event, zones, 'herald-obs-menu');
             },
             contextMenuItems: () => []
-        });
+        };
+    }
 
-        if (success) {
-            postConsoleAndNotification(MODULE.NAME, "HeraldManager: OBS menubar button registered", "", true, false);
-        } else {
-            postConsoleAndNotification(MODULE.NAME, "HeraldManager: Failed to register OBS menubar button", "", false, false);
+    /**
+     * Re-register the Studio button with the given recording state (icon/iconColor are only
+     * covered by the re-register path, per Blacksmith's menubar contract — no lighter update
+     * exists for swapping the icon itself, only for iconColor alone).
+     * @private
+     */
+    static _setStudioRecordingIndicator(recording) {
+        const api = this._blacksmith;
+        if (!api?.unregisterMenubarTool || !api?.registerMenubarTool) return;
+        api.unregisterMenubarTool('studio-obs');
+        api.registerMenubarTool('studio-obs', this._studioMenubarToolConfig(recording));
+    }
+
+    /**
+     * Begin polling Studio's /api/automations/status so the Studio button reflects actual OBS
+     * recording state (idempotent). GM-only: no point in every connected client's browser
+     * separately hitting Studio's server for a gmOnly button.
+     * @private
+     */
+    static _startStudioStatusPoll() {
+        this._stopStudioStatusPoll();
+        this._studioStatusPollIntervalId = this._trackedSetInterval(() => {
+            this._pollStudioStatus();
+        }, this.STUDIO_STATUS_POLL_MS);
+    }
+
+    /**
+     * Stop polling Studio's recording status and reset the indicator back to default.
+     * @private
+     */
+    static _stopStudioStatusPoll() {
+        if (this._studioStatusPollIntervalId != null) {
+            this._trackedClearInterval(this._studioStatusPollIntervalId);
+            this._studioStatusPollIntervalId = null;
+        }
+        if (this._studioLastRecording) this._setStudioRecordingIndicator(false);
+        this._studioLastRecording = null;
+    }
+
+    /**
+     * One poll tick: fetch Studio's OBS status and update the Studio button's indicator only
+     * on an actual state change. Silent on failure/unconfigured (runs every 2.5s; a toast per
+     * tick would spam).
+     * @private
+     */
+    static async _pollStudioStatus() {
+        const base = this._studioBaseUrl();
+        const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
+        if (!base || !token) return;
+        try {
+            const response = await fetch(`${base}/api/automations/status`, {
+                cache: 'no-store',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            const recording = data?.obsConnected ? !!data.recording : false;
+            if (recording === this._studioLastRecording) return;
+            this._studioLastRecording = recording;
+            this._setStudioRecordingIndicator(recording);
+        } catch (_) {
+            // transient network/cert hiccup — next tick tries again
         }
     }
 
@@ -4878,6 +4964,9 @@ this._blacksmith.HookManager.registerHook({
 
         // Toast watchdog: stop sweeping and drop age bookkeeping
         this._stopToastWatchdog();
+
+        // Studio recording indicator: stop polling
+        this._stopStudioStatusPoll();
 
         // Cameraman viewport box: stop reporting (cameraman) and remove overlay (GM)
         this._stopCameramanBoxReporting();
