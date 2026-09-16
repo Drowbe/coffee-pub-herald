@@ -80,7 +80,9 @@ Studio's selector is matched against the live page. A few habits make the measur
 
 Paint inner markup with DOM-direct `createElement` + `textContent` (same idea as Blacksmith toasts). A Herald Handlebars template is an extra fetch on a thin capture page; names must not be concatenated into HTML.
 
-Do not await `BlacksmithAPI.waitForReady()` on `/stream`. That promise only resolves, never rejects; if consumers are never marked ready, the window stays empty.
+Do await `window.BlacksmithAPI.waitForReady()` before the first data fetch, even on `/stream`. Blacksmith registers its own settings (e.g. `combatHistory`) partway through its own `ready` hook, well after `game.actors` exists — calling `stats.party.getAggregate()` before that point throws `"<setting> is not a registered game setting"` and the widget paints its empty state, with nothing to ever retry it on a page that never fires the actor/combat hooks that would normally invalidate Blacksmith's cache. `waitForReady()` only ever resolves, never rejects, so guard the wait with a bounded timeout in case Blacksmith is missing or broken.
+
+`window.BlacksmithAPI` itself does not exist until Blacksmith's `ready` hook dynamically imports `api/blacksmith-api.js` — it is not set at script-load time. A consumer mounting at `init` (like this widget) can easily run before that assignment happens, so poll for `window.BlacksmithAPI` to exist first, then await its `waitForReady()`, both inside the same timeout budget. See `StreamStatsWidget._waitForBlacksmith()` in `scripts/widget-stats.js`.
 
 ## Data
 

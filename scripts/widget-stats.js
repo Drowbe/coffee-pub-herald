@@ -9,9 +9,22 @@
 // This is a Blacksmith tool window with Auto-Hide chrome (see
 // HeraldStreamWindowBaseV2). Inner markup is DOM-direct like Blacksmith
 // toasts — no Herald Handlebars template — because a failed template
-// fetch on `/stream` left this box empty. Do not await
-// BlacksmithAPI.waitForReady(): that promise only resolves, and if the
-// stream page never marks consumers ready the overlay stays blank.
+// fetch on `/stream` left this box empty.
+//
+// The first data fetch DOES wait on window.BlacksmithAPI.waitForReady()
+// (see _waitForBlacksmith below) — that is the only signal that actually
+// lines up with Blacksmith's own init order: Blacksmith registers its
+// settings (e.g. `combatHistory`) partway through its own `ready` hook,
+// well after `game.actors` exists and often after Foundry's `ready`
+// hook has already fired for other modules — calling the stats API
+// before that point throws "not a registered game setting" and the
+// window paints an empty state. Two gotchas that made this wrong the
+// first two times: `window.BlacksmithAPI` itself does not exist until
+// Blacksmith's `ready` hook dynamically imports api/blacksmith-api.js,
+// so it can still be undefined when this runs at Herald's own `init`
+// hook — _waitForBlacksmith polls for the object first, then waits on
+// its readiness promise. And that promise only ever resolves, never
+// rejects, so both waits share one bounded timeout.
 
 import { MODULE, STREAM_STATS, STREAM_WINDOW } from './const.js';
 import { HeraldStreamWindowBaseV2 } from './window-stream-base.js';
@@ -261,14 +274,36 @@ export class StreamStatsWidget {
             this._registerHooks();
             this._hooksRegistered = true;
         }
-        void this._ensureWindow().then((win) => {
+        void this._ensureWindow().then(async (win) => {
             if (!win) return;
             if (!this._mounted) {
                 this._mounted = true;
                 postConsoleAndNotification(MODULE.NAME, 'StreamStatsWidget: mounted', { selector: STREAM_STATS.SELECTOR }, false, false);
             }
+            // Window chrome mounts at `init` so the capture page never shows a
+            // gap. The data fetch waits for Blacksmith itself — see the
+            // file-level note above for why.
+            await this._waitForBlacksmith();
             void this.refresh();
         });
+    }
+
+    static async _waitForBlacksmith(timeoutMs = 20000) {
+        // window.BlacksmithAPI itself does not exist until Blacksmith's own
+        // `ready` hook dynamically imports api/blacksmith-api.js — it is not
+        // set at script-load time, so it can easily still be undefined when
+        // this runs at Herald's `init` hook. Poll for the object first, then
+        // wait on its own readiness promise, both within one time budget.
+        const deadline = Date.now() + timeoutMs;
+        while (!window.BlacksmithAPI?.waitForReady) {
+            if (Date.now() >= deadline) return;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        const remaining = Math.max(0, deadline - Date.now());
+        await Promise.race([
+            window.BlacksmithAPI.waitForReady(),
+            new Promise((resolve) => setTimeout(resolve, remaining))
+        ]);
     }
 
     static async _ensureWindow() {
