@@ -374,6 +374,30 @@ export function registerSettings() {
             try { StreamStatsWidget.onSettingChanged(); } catch (_) { /* widget mounts only on /stream */ }
         }
     });
+
+    registerHeader('studio', 'headingH3Studio-Label', 'headingH3Studio-Hint', 'H3');
+
+    game.settings.register(MODULE.ID, 'studioApiUrl', {
+        name: MODULE.ID + '.studioApiUrl-Label',
+        hint: MODULE.ID + '.studioApiUrl-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: String,
+        default: '',
+        group: WORKFLOW_GROUP
+    });
+
+    game.settings.register(MODULE.ID, 'studioApiToken', {
+        name: MODULE.ID + '.studioApiToken-Label',
+        hint: MODULE.ID + '.studioApiToken-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: String,
+        default: '',
+        group: WORKFLOW_GROUP
+    });
 }
 
 /**

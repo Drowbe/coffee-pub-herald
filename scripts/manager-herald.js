@@ -19,6 +19,22 @@ function matchUserBySetting(user, settingValue) {
     return tokens.includes(user.id?.toLowerCase()) || (user.name ? tokens.includes(user.name.toLowerCase()) : false);
 }
 
+function humanizeStudioAction(action) {
+    if (!action) return '';
+    const spaced = action.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+const STUDIO_ACTION_ICONS = {
+    startRecording: 'fa-solid fa-circle-play',
+    stopRecording: 'fa-solid fa-circle-stop',
+    startStreaming: 'fa-solid fa-tower-broadcast',
+    stopStreaming: 'fa-solid fa-tower-broadcast',
+    sceneSwitch: 'fa-solid fa-clapperboard',
+    sourceShow: 'fa-solid fa-eye',
+    sourceHide: 'fa-solid fa-eye-slash'
+};
+
 function postConsoleAndNotification(strModuleID, message, result, blnDebug, blnNotification) {
     const fromApi = HeraldManager._blacksmith?.utils?.postConsoleAndNotification;
     const fromGlobal = globalThis.BlacksmithUtils?.postConsoleAndNotification;
@@ -45,7 +61,8 @@ export class HeraldManager {
     static _lastBroadcastMode = null;
     static _combatTargetIdsByUser = new Map(); // userId -> Set<tokenId>
     static _broadcastWindowHooksRegistered = false;
-    
+    static _studioCapabilitiesCache = null; // cached GET /api/automations/capabilities; cleared by Options > Refresh Automations
+
     // Resource tracking for cleanup
     static _hookIds = new Set(); // HookManager callback IDs
     static _timeoutIds = new Set(); // setTimeout references
@@ -252,6 +269,7 @@ this._blacksmith.HookManager.registerHook({
             this._registerCameraHooks();
             await this._registerBroadcastBarType();
             this._registerBroadcastTools();
+            this._registerObsMenubarButton();
             this._requestMenubarRender(true);
             // Initial setup at load: same check as the toggles (enabled? -> cameraman? -> sweep on?).
             this._applyToastWatchdogState();
@@ -3219,6 +3237,188 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             this._requestMenubarRender(true);
         } else {
             postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to register view mode menubar button", "", false, false);
+        }
+    }
+
+    /**
+     * Register the OBS/Studio menubar button. Left-click opens a Blacksmith context menu of
+     * studio commands (add new commands in _getObsMenuItems). Independent of the broadcast
+     * bar/enableBroadcast — this is a standalone GM utility for driving the Studio automation server.
+     * @private
+     */
+    static _registerObsMenubarButton() {
+        const api = this._blacksmith;
+        if (!api || typeof api.registerMenubarTool !== 'function') return;
+
+        const success = api.registerMenubarTool('studio-obs', {
+            icon: 'fa-solid fa-clapperboard',
+            name: 'studio-obs',
+            title: () => 'Studio',
+            tooltip: () => 'Studio commands',
+            zone: 'right',
+            group: 'general',
+            groupOrder: 998,
+            order: 9,
+            moduleId: MODULE.ID,
+            gmOnly: true,
+            leaderOnly: false,
+            visible: () => true,
+            toggleable: false,
+            active: false,
+            iconColor: null,
+            buttonNormalTint: null,
+            buttonSelectedTint: null,
+            onClick: async (event) => {
+                const zones = await this._getObsMenuItems();
+                if (zones) this._showBlacksmithContextMenu(event, zones, 'herald-obs-menu');
+            },
+            contextMenuItems: () => []
+        });
+
+        if (success) {
+            postConsoleAndNotification(MODULE.NAME, "HeraldManager: OBS menubar button registered", "", true, false);
+        } else {
+            postConsoleAndNotification(MODULE.NAME, "HeraldManager: Failed to register OBS menubar button", "", false, false);
+        }
+    }
+
+    /**
+     * The Studio server's base address (e.g. https://host:9500), trimmed of trailing slash and
+     * of the old full event-endpoint path if that's what's stored (back-compat with settings
+     * entered before Herald started appending paths itself).
+     * @returns {string}
+     * @private
+     */
+    /**
+     * User-facing feedback for Studio actions goes through Blacksmith's toast API (api.toast),
+     * not Foundry's ui.notifications — themeable, actionable, and consistent with the rest of
+     * Blacksmith's UI instead of the core banner.
+     * @private
+     */
+    static _showStudioToast(title, subtitle, icon, color) {
+        const toast = this._blacksmith?.toast;
+        if (typeof toast?.show !== 'function') return;
+        toast.show({ title, subtitle, icon, color, moduleId: MODULE.ID, duration: 6 });
+    }
+
+    static _studioBaseUrl() {
+        const base = getSettingSafely(MODULE.ID, 'studioApiUrl', '');
+        if (!base) return '';
+        let trimmed = base.replace(/\/+$/, '');
+        if (trimmed.endsWith('/api/automations/event')) {
+            trimmed = trimmed.slice(0, -'/api/automations/event'.length);
+        }
+        return trimmed;
+    }
+
+    /**
+     * Menu items for the OBS menubar button, built live from Studio's /api/automations/capabilities
+     * `rules` (the automations actually configured right now), not a hardcoded list — sending an
+     * event Studio has no rule for would silently do nothing.
+     * @returns {Promise<Object|null>} zones object for _showBlacksmithContextMenu, or null on failure
+     * @private
+     */
+    static async _getObsMenuItems() {
+        const capabilities = this._studioCapabilitiesCache ?? await this._fetchStudioCapabilities();
+        if (!capabilities) return null;
+        this._studioCapabilitiesCache = capabilities;
+
+        const rules = Array.isArray(capabilities.rules) ? capabilities.rules : [];
+        const core = rules.length
+            ? rules.map((rule) => ({
+                name: rule.param ? `${humanizeStudioAction(rule.action)}: ${rule.param}` : humanizeStudioAction(rule.action),
+                icon: STUDIO_ACTION_ICONS[rule.action] || 'fa-solid fa-bolt',
+                onClick: () => this._sendStudioCommand(rule.event)
+            }))
+            : [{ name: game.i18n.localize(MODULE.ID + '.context-obs-no-rules'), icon: 'fa-solid fa-circle-info' }];
+
+        core.push({
+            name: game.i18n.localize(MODULE.ID + '.context-obs-options'),
+            icon: 'fa-solid fa-gear',
+            submenu: [
+                {
+                    name: game.i18n.localize(MODULE.ID + '.context-obs-refresh'),
+                    icon: 'fa-solid fa-rotate',
+                    onClick: () => this._refreshStudioCapabilities()
+                }
+            ]
+        });
+
+        return { core };
+    }
+
+    /**
+     * Force-refetch Studio's capabilities/rules and replace the cache, so the next menu open
+     * (and this notification) reflect automations changed on Studio's side just now.
+     * @private
+     */
+    static async _refreshStudioCapabilities() {
+        this._studioCapabilitiesCache = null;
+        const capabilities = await this._fetchStudioCapabilities();
+        if (!capabilities) return;
+        this._studioCapabilitiesCache = capabilities;
+        this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-refreshed'), '', 'fa-solid fa-rotate');
+    }
+
+    /**
+     * GET the Studio server's current automations capabilities (fixed `actions` + live `rules`).
+     * @returns {Promise<{actions: Array, rules: Array}|null>}
+     * @private
+     */
+    static async _fetchStudioCapabilities() {
+        const base = this._studioBaseUrl();
+        const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
+        if (!base || !token) {
+            const msg = game.i18n.localize(MODULE.ID + '.context-obs-not-configured');
+            postConsoleAndNotification(MODULE.NAME, msg, "", true, false);
+            this._showStudioToast(msg, '', 'fa-solid fa-triangle-exclamation', '#e0a94a');
+            return null;
+        }
+        try {
+            const response = await fetch(`${base}/api/automations/capabilities`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.json();
+        } catch (e) {
+            const msg = game.i18n.localize(MODULE.ID + '.context-obs-load-failed');
+            postConsoleAndNotification(MODULE.NAME, msg, e, true, false);
+            this._showStudioToast(msg, e?.message ?? '', 'fa-solid fa-triangle-exclamation', '#e0546a');
+            return null;
+        }
+    }
+
+    /**
+     * POST an event to the Studio automation server. URL/token come from world settings
+     * (never hardcoded here) so they stay out of module source and git history.
+     * @param {string} eventName
+     * @private
+     */
+    static async _sendStudioCommand(eventName) {
+        const base = this._studioBaseUrl();
+        const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
+        if (!base || !token) {
+            const msg = game.i18n.localize(MODULE.ID + '.context-obs-not-configured');
+            postConsoleAndNotification(MODULE.NAME, msg, "", true, false);
+            this._showStudioToast(msg, '', 'fa-solid fa-triangle-exclamation', '#e0a94a');
+            return;
+        }
+        const url = `${base}/api/automations/event`;
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ event: eventName })
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            postConsoleAndNotification(MODULE.NAME, `Studio command sent: ${eventName}`, "", true, false);
+            this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-command-sent'), eventName, 'fa-solid fa-clapperboard');
+        } catch (e) {
+            postConsoleAndNotification(MODULE.NAME, `Studio command failed: ${eventName}`, e, true, false);
+            this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-command-failed'), eventName, 'fa-solid fa-triangle-exclamation', '#e0546a');
         }
     }
 
