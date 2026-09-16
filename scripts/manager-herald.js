@@ -97,6 +97,10 @@ function studioParamPromptLabel(paramType) {
     return `${paramType} value`;
 }
 
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function postConsoleAndNotification(strModuleID, message, result, blnDebug, blnNotification) {
     const fromApi = HeraldManager._blacksmith?.utils?.postConsoleAndNotification;
     const fromGlobal = globalThis.BlacksmithUtils?.postConsoleAndNotification;
@@ -3431,13 +3435,6 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
     }
 
     /**
-     * The Studio server's base address (e.g. https://host:9500), trimmed of trailing slash and
-     * of the old full event-endpoint path if that's what's stored (back-compat with settings
-     * entered before Herald started appending paths itself).
-     * @returns {string}
-     * @private
-     */
-    /**
      * User-facing feedback for Studio actions goes through Blacksmith's toast API (api.toast),
      * not Foundry's ui.notifications — themeable, actionable, and consistent with the rest of
      * Blacksmith's UI instead of the core banner.
@@ -3449,6 +3446,13 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         toast.show({ title, subtitle, icon, color, moduleId: MODULE.ID, duration: 6 });
     }
 
+    /**
+     * The Studio server's base address (e.g. https://host:9500), trimmed of trailing slash and
+     * of the old full event-endpoint path if that's what's stored (back-compat with settings
+     * entered before Herald started appending paths itself).
+     * @returns {string}
+     * @private
+     */
     static _studioBaseUrl() {
         const base = getSettingSafely(MODULE.ID, 'studioApiUrl', '');
         if (!base) return '';
@@ -3489,15 +3493,28 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             if (!groups.has(groupName)) groups.set(groupName, []);
             groups.get(groupName).push(item);
         }
+        const scenes = Array.isArray(capabilities.scenes) ? capabilities.scenes : [];
         for (const [groupName, items] of groups) {
-            core.push({
-                name: groupName,
-                icon: STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group',
-                submenu: items.map((item) => ({
+            const submenu = items.flatMap((item) => {
+                // A scene-targeted action with Studio's real scene list available: skip the
+                // prompt entirely and list the actual scenes as one-click entries.
+                if (item.paramType === 'scene' && scenes.length) {
+                    return scenes.map((scene) => ({
+                        name: scene.name,
+                        icon: scene.current ? 'fa-solid fa-circle-check' : 'fa-solid fa-clapperboard',
+                        onClick: () => this._sendStudioAction(item.action, scene.name)
+                    }));
+                }
+                return [{
                     name: humanizeStudioAction(item.action),
                     icon: STUDIO_ACTION_ICONS[item.action] || 'fa-solid fa-bolt',
                     onClick: () => this._triggerStudioAction(item)
-                }))
+                }];
+            });
+            core.push({
+                name: groupName,
+                icon: STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group',
+                submenu
             });
         }
 
@@ -3527,22 +3544,31 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         const promptLabel = studioParamPromptLabel(item.paramType ?? item.param);
         let param = null;
         if (promptLabel) {
-            param = await this._promptStudioParam(humanizeStudioAction(item.action), promptLabel);
+            const sources = Array.isArray(this._studioCapabilitiesCache?.sources) ? this._studioCapabilitiesCache.sources : null;
+            const options = item.paramType === 'source' ? sources : null;
+            param = await this._promptStudioParam(humanizeStudioAction(item.action), promptLabel, options);
             if (param == null) return; // cancelled
         }
         await this._sendStudioAction(item.action, param);
     }
 
     /**
-     * Prompt the GM for a text value (scene/source name) before sending a parameterized action.
-     * @returns {Promise<string|null>} the trimmed value, or null if cancelled/empty
+     * Prompt the GM for a param value before sending a parameterized action. Renders a real
+     * dropdown of Studio's known values when `options` is given (e.g. the live source list) —
+     * free-text is the fallback for anything Studio hasn't enumerated for us.
+     * @param {string[]|null} options
+     * @returns {Promise<string|null>} the chosen/trimmed value, or null if cancelled/empty
      * @private
      */
-    static async _promptStudioParam(title, label) {
+    static async _promptStudioParam(title, label, options) {
+        const hasOptions = Array.isArray(options) && options.length > 0;
+        const field = hasOptions
+            ? `<select name="param" autofocus>${options.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}</select>`
+            : `<input type="text" name="param" autofocus>`;
         try {
             const value = await foundry.applications.api.DialogV2.prompt({
                 window: { title },
-                content: `<label style="display:flex;flex-direction:column;gap:4px;">${label}<input type="text" name="param" autofocus></label>`,
+                content: `<label style="display:flex;flex-direction:column;gap:4px;">${label}${field}</label>`,
                 ok: {
                     label: game.i18n.localize(MODULE.ID + '.context-obs-send'),
                     callback: (_event, button) => button.form.elements.param.value.trim()
