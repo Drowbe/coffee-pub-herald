@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.0.2]
+
+### Fixed
+
+- **MVP leaderboard widget showed "No MVP rankings yet." even with real combat history**: `StreamStatsWidget` mounts on Foundry's `init` hook so the capture-page window box appears immediately, but its first call to Blacksmith's `stats.party.getAggregate()` was racing Blacksmith's own `ready`-hook setup, which registers settings such as `combatHistory` partway through. Calling the stats API before that point threw `"combatHistory" is not a registered game setting`, and nothing on `/stream` ever fired the actor/combat hooks that would have retried it, so the box stayed empty for the rest of the session.
+  - Fixed by waiting for the one concrete precondition the widget needs — `game.settings.settings.get('coffee-pub-blacksmith.combatHistory')` — before the first fetch, rather than the window mount itself, which still happens immediately.
+  - **Not fixed by awaiting `window.BlacksmithAPI.waitForReady()`**, despite that looking like the obvious, better-documented fix (and matching how Squire's own leaderboard panel consumes the same API): verified live that `window.BlacksmithAPI.isReady` never becomes `true` on `/stream` at all, because a later step in Blacksmith's `ready`-hook handler depends on interface chrome the capture page does not render. See `documentation/architecture/architecture-stream-widgets.md`.
+  - Several additional bugs on Blacksmith's side compounded this while diagnosing it live — a `getPartyActors()` permission mismatch for the Observer-level stream/camera user, a `default: null` on an Object-type setting, and a raw `game.settings.get()` in `getCombatHistory()` that aborted the whole aggregate build on any timing race — all since fixed upstream in Blacksmith; no further changes needed here.
+
+### Changed
+
+- **Leaderboard rank styling**: ranks 1–3 now show a medal icon (`fa-solid fa-medal`) in gold/silver/bronze instead of the bare number; the silver shade is `rgb(206, 196, 185)`. Ranks 4 and below keep the plain number, now in the muted neutral text color instead of green, which read as a second "winner" tier it was not meant to imply.
+
 ## [14.0.1]
 
 ### Added
