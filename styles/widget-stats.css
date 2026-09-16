@@ -143,7 +143,7 @@ body.stream .application.herald-stream-window.herald-stream-window--hidden,
 .application.herald-stats-window .herald-stats-col--rank {
     text-align: center;
     font-weight: 700;
-    color: var(--blacksmith-status-success, #629602);
+    color: var(--blacksmith-tool-text-muted);
 }
 
 .application.herald-stats-window .herald-stats-row--first .herald-stats-col--rank {
@@ -151,7 +151,7 @@ body.stream .application.herald-stream-window.herald-stream-window--hidden,
 }
 
 .application.herald-stats-window .herald-stats-row--second .herald-stats-col--rank {
-    color: #c0c0c0;
+    color: rgb(206, 196, 185);
 }
 
 .application.herald-stats-window .herald-stats-row--third .herald-stats-col--rank {

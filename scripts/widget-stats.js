@@ -11,20 +11,24 @@
 // toasts — no Herald Handlebars template — because a failed template
 // fetch on `/stream` left this box empty.
 //
-// The first data fetch DOES wait on window.BlacksmithAPI.waitForReady()
-// (see _waitForBlacksmith below) — that is the only signal that actually
-// lines up with Blacksmith's own init order: Blacksmith registers its
-// settings (e.g. `combatHistory`) partway through its own `ready` hook,
-// well after `game.actors` exists and often after Foundry's `ready`
-// hook has already fired for other modules — calling the stats API
-// before that point throws "not a registered game setting" and the
-// window paints an empty state. Two gotchas that made this wrong the
-// first two times: `window.BlacksmithAPI` itself does not exist until
-// Blacksmith's `ready` hook dynamically imports api/blacksmith-api.js,
-// so it can still be undefined when this runs at Herald's own `init`
-// hook — _waitForBlacksmith polls for the object first, then waits on
-// its readiness promise. And that promise only ever resolves, never
-// rejects, so both waits share one bounded timeout.
+// Do not await `window.BlacksmithAPI.waitForReady()` here. Verified live on
+// `/stream` (2026-09-15): `window.BlacksmithAPI` exists but `.isReady` stays
+// false for the full page session — Blacksmith's own `ready`-hook handler
+// starts (far enough to dynamically import api/blacksmith-api.js and assign
+// the global) but never reaches `markReadyForConsumers()` on this page,
+// almost certainly because a later step in that same handler (menubar/UI
+// setup) depends on chrome that `/stream` does not render and hangs.
+// `waitForReady()` only ever resolves, never rejects, so a consumer that
+// awaits it here waits forever and the window never gets data.
+//
+// Instead, wait for the one concrete precondition this widget actually
+// needs: Blacksmith's `combatHistory` world setting being registered (see
+// `_waitForCombatHistorySetting` below). That setting is registered by
+// Blacksmith's `registerSettings()`, called early in the same ready-hook
+// handler — before the part that hangs on `/stream` — so polling for it
+// directly sidesteps the parts of Blacksmith's boot that never finish here.
+// Calling `stats.party.getAggregate()` before it exists throws "combatHistory
+// is not a registered game setting", caught below, and paints an empty state.
 
 import { MODULE, STREAM_STATS, STREAM_WINDOW } from './const.js';
 import { HeraldStreamWindowBaseV2 } from './window-stream-base.js';
@@ -164,7 +168,14 @@ export class StreamStatsWindow extends HeraldStreamWindowBaseV2 {
 
         const rank = document.createElement('span');
         rank.className = 'herald-stats-col herald-stats-col--rank';
-        rank.textContent = String(row.rank);
+        if (row.rank === 1 || row.rank === 2 || row.rank === 3) {
+            const medal = document.createElement('i');
+            medal.className = 'fa-solid fa-medal';
+            medal.setAttribute('aria-hidden', 'true');
+            rank.appendChild(medal);
+        } else {
+            rank.textContent = String(row.rank);
+        }
 
         const player = document.createElement('span');
         player.className = 'herald-stats-col herald-stats-col--player';
@@ -281,29 +292,22 @@ export class StreamStatsWidget {
                 postConsoleAndNotification(MODULE.NAME, 'StreamStatsWidget: mounted', { selector: STREAM_STATS.SELECTOR }, false, false);
             }
             // Window chrome mounts at `init` so the capture page never shows a
-            // gap. The data fetch waits for Blacksmith itself — see the
-            // file-level note above for why.
-            await this._waitForBlacksmith();
+            // gap. The data fetch waits for Blacksmith's `combatHistory`
+            // setting specifically — see the file-level note above for why
+            // that, and not BlacksmithAPI.waitForReady(), is the right gate.
+            await this._waitForCombatHistorySetting();
             void this.refresh();
         });
     }
 
-    static async _waitForBlacksmith(timeoutMs = 20000) {
-        // window.BlacksmithAPI itself does not exist until Blacksmith's own
-        // `ready` hook dynamically imports api/blacksmith-api.js — it is not
-        // set at script-load time, so it can easily still be undefined when
-        // this runs at Herald's `init` hook. Poll for the object first, then
-        // wait on its own readiness promise, both within one time budget.
+    static async _waitForCombatHistorySetting(timeoutMs = 20000, intervalMs = 100) {
+        const key = 'coffee-pub-blacksmith.combatHistory';
         const deadline = Date.now() + timeoutMs;
-        while (!window.BlacksmithAPI?.waitForReady) {
-            if (Date.now() >= deadline) return;
-            await new Promise((resolve) => setTimeout(resolve, 100));
+        while (!game.settings.settings.get(key)) {
+            if (Date.now() >= deadline) return false;
+            await new Promise((resolve) => setTimeout(resolve, intervalMs));
         }
-        const remaining = Math.max(0, deadline - Date.now());
-        await Promise.race([
-            window.BlacksmithAPI.waitForReady(),
-            new Promise((resolve) => setTimeout(resolve, remaining))
-        ]);
+        return true;
     }
 
     static async _ensureWindow() {
