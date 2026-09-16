@@ -19,21 +19,83 @@ function matchUserBySetting(user, settingValue) {
     return tokens.includes(user.id?.toLowerCase()) || (user.name ? tokens.includes(user.name.toLowerCase()) : false);
 }
 
+// Studio's ruleSets entries are {name, group, event} — no action/param — so the icon is guessed
+// from the rule's own name/group rather than looked up by a fixed action key.
+function studioRuleIcon(rule) {
+    const name = (rule?.name || '').toLowerCase();
+    const group = (rule?.group || '').toLowerCase();
+    if (group.includes('stream')) return 'fa-solid fa-tower-broadcast';
+    if (name.includes('stop')) return 'fa-solid fa-circle-stop';
+    if (name.includes('start')) return 'fa-solid fa-circle-play';
+    if (group.includes('scene')) return 'fa-solid fa-clapperboard';
+    if (group.includes('source')) return 'fa-solid fa-eye';
+    return 'fa-solid fa-bolt';
+}
+
 function humanizeStudioAction(action) {
     if (!action) return '';
-    const spaced = action.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    const spaced = String(action).replace(/([a-z0-9])([A-Z])/g, '$1 $2');
     return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+// Fallback grouping when an /capabilities action entry has no `group` of its own.
+const STUDIO_ACTION_GROUPS = {
+    sceneSwitch: 'Scenes',
+    sourceShow: 'Sources',
+    sourceHide: 'Sources',
+    sourceToggle: 'Sources',
+    startRecording: 'Controls',
+    pauseRecording: 'Controls',
+    resumeRecording: 'Controls',
+    stopRecording: 'Controls',
+    startStreaming: 'Controls',
+    stopStreaming: 'Controls',
+    wakeAudio: 'Studio Control',
+    startAll: 'Studio Control',
+    stopAll: 'Studio Control',
+    syncObs: 'Studio Control',
+    dockAll: 'Studio Control',
+    undockAll: 'Studio Control'
+};
+
+const STUDIO_GROUP_ICONS = {
+    'Scenes': 'fa-solid fa-clapperboard',
+    'Sources': 'fa-solid fa-eye',
+    'Controls': 'fa-solid fa-sliders',
+    'Studio Control': 'fa-solid fa-satellite-dish'
+};
+
 const STUDIO_ACTION_ICONS = {
+    sceneSwitch: 'fa-solid fa-clapperboard',
+    sourceShow: 'fa-solid fa-eye',
+    sourceHide: 'fa-solid fa-eye-slash',
+    sourceToggle: 'fa-solid fa-toggle-on',
     startRecording: 'fa-solid fa-circle-play',
+    pauseRecording: 'fa-solid fa-pause',
+    resumeRecording: 'fa-solid fa-circle-play',
     stopRecording: 'fa-solid fa-circle-stop',
     startStreaming: 'fa-solid fa-tower-broadcast',
     stopStreaming: 'fa-solid fa-tower-broadcast',
-    sceneSwitch: 'fa-solid fa-clapperboard',
-    sourceShow: 'fa-solid fa-eye',
-    sourceHide: 'fa-solid fa-eye-slash'
+    wakeAudio: 'fa-solid fa-volume-high',
+    startAll: 'fa-solid fa-play',
+    stopAll: 'fa-solid fa-stop',
+    syncObs: 'fa-solid fa-rotate',
+    dockAll: 'fa-solid fa-window-restore',
+    undockAll: 'fa-solid fa-window-maximize'
 };
+
+// Studio's action entries carry a paramType describing what to collect before sending — a bare
+// scene/source name, or nothing at all for "unused". Values beyond 'scene'/'source' still get a
+// prompt (labelled generically) rather than being assumed to need nothing, since silently
+// skipping a required param would send the action broken.
+function studioParamPromptLabel(paramType) {
+    if (!paramType) return null;
+    const t = String(paramType).toLowerCase();
+    if (t === 'unused' || t === 'none') return null;
+    if (t === 'scene') return 'Scene name';
+    if (t === 'source') return 'Source name';
+    return `${paramType} value`;
+}
 
 function postConsoleAndNotification(strModuleID, message, result, blnDebug, blnNotification) {
     const fromApi = HeraldManager._blacksmith?.utils?.postConsoleAndNotification;
@@ -3313,8 +3375,8 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
 
     /**
      * Menu items for the OBS menubar button, built live from Studio's /api/automations/capabilities
-     * `rules` (the automations actually configured right now), not a hardcoded list — sending an
-     * event Studio has no rule for would silently do nothing.
+     * `ruleSets` (the enabled automations configured right now — each `{name, group, event}`), not
+     * a hardcoded list — sending an event Studio has no rule for would silently do nothing.
      * @returns {Promise<Object|null>} zones object for _showBlacksmithContextMenu, or null on failure
      * @private
      */
@@ -3323,14 +3385,35 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         if (!capabilities) return null;
         this._studioCapabilitiesCache = capabilities;
 
-        const rules = Array.isArray(capabilities.rules) ? capabilities.rules : [];
-        const core = rules.length
-            ? rules.map((rule) => ({
-                name: rule.param ? `${humanizeStudioAction(rule.action)}: ${rule.param}` : humanizeStudioAction(rule.action),
-                icon: STUDIO_ACTION_ICONS[rule.action] || 'fa-solid fa-bolt',
+        const ruleSets = Array.isArray(capabilities.ruleSets) ? capabilities.ruleSets : [];
+        const core = ruleSets.length
+            ? ruleSets.map((rule) => ({
+                name: rule.name || rule.event,
+                icon: studioRuleIcon(rule),
                 onClick: () => this._sendStudioCommand(rule.event)
             }))
             : [{ name: game.i18n.localize(MODULE.ID + '.context-obs-no-rules'), icon: 'fa-solid fa-circle-info' }];
+
+        // Full action catalog, grouped (Scenes/Sources/Controls/Studio Control) into flyouts —
+        // these call /api/automations/action directly, independent of whether a rule exists.
+        const actions = Array.isArray(capabilities.actions) ? capabilities.actions : [];
+        const groups = new Map();
+        for (const item of actions) {
+            const groupName = item.group || STUDIO_ACTION_GROUPS[item.action] || 'Other';
+            if (!groups.has(groupName)) groups.set(groupName, []);
+            groups.get(groupName).push(item);
+        }
+        for (const [groupName, items] of groups) {
+            core.push({
+                name: groupName,
+                icon: STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group',
+                submenu: items.map((item) => ({
+                    name: humanizeStudioAction(item.action),
+                    icon: STUDIO_ACTION_ICONS[item.action] || 'fa-solid fa-bolt',
+                    onClick: () => this._triggerStudioAction(item)
+                }))
+            });
+        }
 
         core.push({
             name: game.i18n.localize(MODULE.ID + '.context-obs-options'),
@@ -3348,6 +3431,80 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
     }
 
     /**
+     * Handle a click on an action-catalog menu item: prompt for a param first if the action
+     * needs one (paramType other than 'unused'/'none'), then POST it. Cancelling the prompt
+     * sends nothing.
+     * @param {{action: string, paramType?: string, param?: string}} item
+     * @private
+     */
+    static async _triggerStudioAction(item) {
+        const promptLabel = studioParamPromptLabel(item.paramType ?? item.param);
+        let param = null;
+        if (promptLabel) {
+            param = await this._promptStudioParam(humanizeStudioAction(item.action), promptLabel);
+            if (param == null) return; // cancelled
+        }
+        await this._sendStudioAction(item.action, param);
+    }
+
+    /**
+     * Prompt the GM for a text value (scene/source name) before sending a parameterized action.
+     * @returns {Promise<string|null>} the trimmed value, or null if cancelled/empty
+     * @private
+     */
+    static async _promptStudioParam(title, label) {
+        try {
+            const value = await foundry.applications.api.DialogV2.prompt({
+                window: { title },
+                content: `<label style="display:flex;flex-direction:column;gap:4px;">${label}<input type="text" name="param" autofocus></label>`,
+                ok: {
+                    label: game.i18n.localize(MODULE.ID + '.context-obs-send'),
+                    callback: (_event, button) => button.form.elements.param.value.trim()
+                },
+                rejectClose: false
+            });
+            return value || null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    /**
+     * POST a direct action to the Studio automation server (bypasses the event/rule layer —
+     * synchronous: 200 means it actually ran, 400/500 carry a real `{error}` reason).
+     * @param {string} action
+     * @param {string|null} param
+     * @private
+     */
+    static async _sendStudioAction(action, param) {
+        const base = this._studioBaseUrl();
+        const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
+        if (!base || !token) {
+            const msg = game.i18n.localize(MODULE.ID + '.context-obs-not-configured');
+            postConsoleAndNotification(MODULE.NAME, msg, "", true, false);
+            this._showStudioToast(msg, '', 'fa-solid fa-triangle-exclamation', '#e0a94a');
+            return;
+        }
+        try {
+            const response = await fetch(`${base}/api/automations/action`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ action, param: param ?? null })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+            postConsoleAndNotification(MODULE.NAME, `Studio action ran: ${action}`, "", true, false);
+            this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-action-ran'), humanizeStudioAction(action), STUDIO_ACTION_ICONS[action] || 'fa-solid fa-bolt');
+        } catch (e) {
+            postConsoleAndNotification(MODULE.NAME, `Studio action failed: ${action}`, e, true, false);
+            this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-action-failed'), `${humanizeStudioAction(action)}: ${e.message}`, 'fa-solid fa-triangle-exclamation', '#e0546a');
+        }
+    }
+
+    /**
      * Force-refetch Studio's capabilities/rules and replace the cache, so the next menu open
      * (and this notification) reflect automations changed on Studio's side just now.
      * @private
@@ -3361,8 +3518,8 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
     }
 
     /**
-     * GET the Studio server's current automations capabilities (fixed `actions` + live `rules`).
-     * @returns {Promise<{actions: Array, rules: Array}|null>}
+     * GET the Studio server's current automations capabilities (fixed `actions` + live `ruleSets`).
+     * @returns {Promise<{actions: Array, ruleSets: Array}|null>}
      * @private
      */
     static async _fetchStudioCapabilities() {
@@ -3375,7 +3532,10 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             return null;
         }
         try {
+            // no-store: this is polled on demand (menu open / Refresh Automations) specifically to
+            // reflect config changes just made on Studio's side, so a browser-cached GET defeats it.
             const response = await fetch(`${base}/api/automations/capabilities`, {
+                cache: 'no-store',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
