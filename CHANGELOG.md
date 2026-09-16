@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [14.0.3]
 
+### Added
+
+- **Studio (OBS) menubar button**: a GM-only **Studio** control in Blacksmith's menubar, separate from View Mode, for driving a Coffee Pub Studio automation server directly from Foundry.
+  - New settings **Studio Server URL** and **Studio API Token** (world-scope; never hardcoded, so a credential never ships in module source or git history).
+  - The menu is built live from Studio's `GET /api/automations/capabilities` every time it opens (cached; **Options → Refresh Automations** forces a re-fetch): configured rule sets appear as one-click items, the full action catalog is grouped into **Scenes / Sources / Controls / Studio Control** flyouts, actual OBS scene names and source names are offered directly (a dropdown for sources, one-click entries for scenes with the current scene checked) rather than typed free text.
+  - A recording indicator: the button's icon pulses red while Studio reports OBS is actually recording (`GET /api/automations/status`, polled every 2.5s), independent of which button was last clicked — it reflects real OBS state whether recording started/stopped from this menu, from inside OBS directly, or an automation call failed silently.
+  - User-facing feedback for Studio actions uses Blacksmith's toast API rather than Foundry's core notification banner.
+  - See [Studio (OBS) control](documentation/userguides/userguide-gm.md#studio-obs-control) and [Studio integration architecture](documentation/architecture/architecture-studio-integration.md).
+
 ## [14.0.2]
 
 ### Fixed
