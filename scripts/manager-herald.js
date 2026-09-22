@@ -153,6 +153,8 @@ export class HeraldManager {
     static STUDIO_STATUS_POLL_MS = 2500;
     static _studioStatusPollIntervalId = null;
     static _studioLastRecording = null; // null = unknown yet; avoids a redundant menubar re-register per tick
+    static _studioFieldsRegistered = false; // POST /api/automations/fields sent successfully this session
+    static _studioPendingEpisodeTitle = ''; // captured on Record, sent again on Stop alongside the description
 
     /**
      * Settings read heavily during camera follow / pan / zoom paths.
@@ -279,6 +281,7 @@ this._blacksmith.HookManager.registerHook({
 
                 if (moduleId === MODULE.ID && (settingKey === 'studioApiUrl' || settingKey === 'studioApiToken')) {
                     this._studioCapabilitiesCache = null;
+                    this._studioFieldsRegistered = false; // different server -- (re-)register Herald's field keys with it
                     if (game.user?.isGM) this._startStudioStatusPoll();
                 }
 
@@ -3475,14 +3478,33 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         if (!capabilities) return null;
         this._studioCapabilitiesCache = capabilities;
 
+        // Record Episode / Stop & Upload: prompts for a Title (on record) and Description (on
+        // stop), sent to Studio as heraldTitle/heraldDescription riding Studio's EXISTING
+        // session:StartRecording / session:StopRecording rule sets (the ones that actually run
+        // OBS + the scene sequence) so a chained uploadToYouTube rule stage can resolve them.
+        // Which one shows follows the actual OBS recording state from the status poll, not a guess.
+        const core = [this._studioLastRecording
+            ? {
+                name: game.i18n.localize(MODULE.ID + '.context-obs-stop-upload'),
+                icon: 'fa-solid fa-circle-stop',
+                onClick: () => this._stopStudioRecordingEpisode()
+            }
+            : {
+                name: game.i18n.localize(MODULE.ID + '.context-obs-record-episode'),
+                icon: 'fa-solid fa-circle-play',
+                onClick: () => this._startStudioRecordingEpisode()
+            }];
+
         const ruleSets = Array.isArray(capabilities.ruleSets) ? capabilities.ruleSets : [];
-        const core = ruleSets.length
-            ? ruleSets.map((rule) => ({
+        if (ruleSets.length) {
+            core.push(...ruleSets.map((rule) => ({
                 name: rule.name || rule.event,
                 icon: studioRuleIcon(rule),
                 onClick: () => this._sendStudioCommand(rule.event)
-            }))
-            : [{ name: game.i18n.localize(MODULE.ID + '.context-obs-no-rules'), icon: 'fa-solid fa-circle-info' }];
+            })));
+        } else {
+            core.push({ name: game.i18n.localize(MODULE.ID + '.context-obs-no-rules'), icon: 'fa-solid fa-circle-info' });
+        }
 
         // Full action catalog, grouped (Scenes/Sources/Controls/Studio Control) into flyouts —
         // these call /api/automations/action directly, independent of whether a rule exists.
@@ -3582,6 +3604,67 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
     }
 
     /**
+     * Prompt the GM for Episode Title, then fire Studio's EXISTING `session:StartRecording`
+     * event (the rule set that actually starts OBS + the scene sequence) with `heraldTitle` in
+     * `data`, so the later `uploadToYouTube` stage chained off `session:StopRecording` can
+     * resolve it. A title is required — cancelling here means recording never starts, since a
+     * recording with no title isn't worth uploading.
+     * @private
+     */
+    static async _startStudioRecordingEpisode() {
+        const label = game.i18n.localize(MODULE.ID + '.context-obs-episode-title');
+        const title = await this._promptStudioText(label, label, false);
+        if (!title) return; // cancelled or empty -- don't start recording without one
+        this._studioPendingEpisodeTitle = title;
+        await this._sendStudioCommand('session:StartRecording', { heraldTitle: title });
+    }
+
+    /**
+     * Prompt the GM for Episode Description, then fire Studio's EXISTING `session:StopRecording`
+     * event with both `heraldTitle`/`heraldDescription` in `data` — this is the event whose
+     * `data` the chained `uploadToYouTube` rule stage actually resolves against, so both fields
+     * have to travel on this one request, not split across the start and stop events. Unlike the
+     * title prompt, cancelling here still stops the recording (an empty description), since
+     * leaving OBS recording indefinitely because a dialog was dismissed would be worse.
+     * @private
+     */
+    static async _stopStudioRecordingEpisode() {
+        const label = game.i18n.localize(MODULE.ID + '.context-obs-episode-description');
+        const description = await this._promptStudioText(label, label, true);
+        await this._sendStudioCommand('session:StopRecording', {
+            heraldTitle: this._studioPendingEpisodeTitle,
+            heraldDescription: description || ''
+        });
+        this._studioPendingEpisodeTitle = '';
+    }
+
+    /**
+     * Free-text prompt (title/description have no enumerable options to pick from, unlike
+     * scene/source params).
+     * @returns {Promise<string|null>} the trimmed value, or null if cancelled
+     * @private
+     */
+    static async _promptStudioText(title, label, multiline) {
+        const field = multiline
+            ? `<textarea name="value" autofocus rows="4"></textarea>`
+            : `<input type="text" name="value" autofocus>`;
+        try {
+            const value = await foundry.applications.api.DialogV2.prompt({
+                window: { title },
+                content: `<label style="display:flex;flex-direction:column;gap:4px;">${label}${field}</label>`,
+                ok: {
+                    label: game.i18n.localize(MODULE.ID + '.context-obs-send'),
+                    callback: (_event, button) => button.form.elements.value.value.trim()
+                },
+                rejectClose: false
+            });
+            return value || null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    /**
      * POST a direct action to the Studio automation server (bypasses the event/rule layer —
      * synchronous: 200 means it actually ran, 400/500 carry a real `{error}` reason).
      * @param {string} action
@@ -3651,7 +3734,9 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return await response.json();
+            const capabilities = await response.json();
+            if (!this._studioFieldsRegistered) this._registerStudioFields();
+            return capabilities;
         } catch (e) {
             const msg = game.i18n.localize(MODULE.ID + '.context-obs-load-failed');
             postConsoleAndNotification(MODULE.NAME, msg, e, true, false);
@@ -3661,12 +3746,47 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
     }
 
     /**
+     * Register Herald's own custom field keys with Studio (idempotent, fire-and-forget) so
+     * `uploadToYouTube` (and anything else) can resolve `heraldTitle`/`heraldDescription` from
+     * event `data`. Own-namespaced keys deliberately, not `sessionTitle`/`sessionDescription` —
+     * `resolveDataField` checks Studio's own Metadata fields first, and an existing Studio field
+     * with the same key would always win over whatever Herald sends.
+     * @private
+     */
+    static async _registerStudioFields() {
+        const base = this._studioBaseUrl();
+        const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
+        if (!base || !token) return;
+        try {
+            const response = await fetch(`${base}/api/automations/fields`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    module: 'herald',
+                    fields: [
+                        { key: 'heraldTitle', label: 'Episode Title' },
+                        { key: 'heraldDescription', label: 'Episode Description' }
+                    ]
+                })
+            });
+            if (response.ok) this._studioFieldsRegistered = true;
+        } catch (_) {
+            // silent -- retried on the next successful capabilities fetch
+        }
+    }
+
+    /**
      * POST an event to the Studio automation server. URL/token come from world settings
      * (never hardcoded here) so they stay out of module source and git history.
      * @param {string} eventName
+     * @param {Object} [data] - optional field data (Herald-registered keys — see _registerStudioFields)
+     *   the triggered rule set's later stages (e.g. uploadToYouTube) can resolve against.
      * @private
      */
-    static async _sendStudioCommand(eventName) {
+    static async _sendStudioCommand(eventName, data) {
         const base = this._studioBaseUrl();
         const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
         if (!base || !token) {
@@ -3683,7 +3803,7 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ event: eventName })
+                body: JSON.stringify(data ? { event: eventName, data } : { event: eventName })
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             postConsoleAndNotification(MODULE.NAME, `Studio command sent: ${eventName}`, "", true, false);

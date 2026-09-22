@@ -61,7 +61,8 @@ A separate **Studio** button sits in Blacksmith's menubar, next to View Mode. It
 
 Left-click it to open the menu:
 
-- **Your configured automations** — whatever rule sets are live on Studio's Automations tab appear as one-click items at the top (e.g. *Begin Session Recording*). What shows here is always what Studio currently has wired up, not a fixed list — add or remove a rule set on Studio's side and it appears or disappears here too.
+- **Record Episode… / Stop & Upload…** — the first item in the menu, and it follows actual OBS state: **Record Episode…** shows when nothing is recording, **Stop & Upload…** once it is. Record prompts for an Episode Title (required — cancelling does not start recording) and starts recording; Stop prompts for an Episode Description (cancelling still stops the recording — you are not left recording indefinitely over a dismissed dialog) and stops it. These ride Studio's existing recording rule sets (`session:StartRecording`/`session:StopRecording`) rather than triggering anything new, so a YouTube upload chained onto them on Studio's Automations tab picks up the title/description automatically once that chain's pickers point at Herald's fields; see [architecture](../architecture/architecture-studio-integration.md).
+- **Your configured automations** — whatever rule sets are live on Studio's Automations tab appear as one-click items next (e.g. *Toggle MVP*). What shows here is always what Studio currently has wired up, not a fixed list — add or remove a rule set on Studio's side and it appears or disappears here too.
 - **Scenes** — every OBS scene Studio knows about, one click to switch. The current scene gets a check mark.
 - **Sources** — Show, Hide, and Toggle, each opens a dropdown of every OBS source so you pick the exact one rather than typing a name.
 - **Controls** — start/pause/resume/stop recording, start/stop streaming.
