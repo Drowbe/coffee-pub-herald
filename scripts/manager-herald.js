@@ -153,8 +153,6 @@ export class HeraldManager {
     static STUDIO_STATUS_POLL_MS = 2500;
     static _studioStatusPollIntervalId = null;
     static _studioLastRecording = null; // null = unknown yet; avoids a redundant menubar re-register per tick
-    static _studioFieldsRegistered = false; // POST /api/automations/fields sent successfully this session
-    static _studioPendingEpisodeTitle = ''; // captured on Record, sent again on Stop alongside the description
 
     /**
      * Settings read heavily during camera follow / pan / zoom paths.
@@ -281,7 +279,6 @@ this._blacksmith.HookManager.registerHook({
 
                 if (moduleId === MODULE.ID && (settingKey === 'studioApiUrl' || settingKey === 'studioApiToken')) {
                     this._studioCapabilitiesCache = null;
-                    this._studioFieldsRegistered = false; // different server -- (re-)register Herald's field keys with it
                     if (game.user?.isGM) this._startStudioStatusPoll();
                 }
 
@@ -3468,8 +3465,10 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
 
     /**
      * Menu items for the OBS menubar button, built live from Studio's /api/automations/capabilities
-     * `ruleSets` (the enabled automations configured right now — each `{name, group, event}`), not
-     * a hardcoded list — sending an event Studio has no rule for would silently do nothing.
+     * `ruleSets` (the enabled automations configured right now — each `{name, group, event,
+     * prompts}`), not a hardcoded list — sending an event Studio has no rule for would silently
+     * do nothing. Each rule set's `prompts` (fields Studio currently needs answered before it can
+     * run) are re-checked live at click time by `_fireStudioRuleSet`, not read from this cached copy.
      * @returns {Promise<Object|null>} zones object for _showBlacksmithContextMenu, or null on failure
      * @private
      */
@@ -3478,30 +3477,40 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         if (!capabilities) return null;
         this._studioCapabilitiesCache = capabilities;
 
-        // Record Episode / Stop & Upload: prompts for a Title (on record) and Description (on
-        // stop), sent to Studio as heraldTitle/heraldDescription riding Studio's EXISTING
-        // session:StartRecording / session:StopRecording rule sets (the ones that actually run
-        // OBS + the scene sequence) so a chained uploadToYouTube rule stage can resolve them.
-        // Which one shows follows the actual OBS recording state from the status poll, not a guess.
-        const core = [this._studioLastRecording
-            ? {
-                name: game.i18n.localize(MODULE.ID + '.context-obs-stop-upload'),
-                icon: 'fa-solid fa-circle-stop',
-                onClick: () => this._stopStudioRecordingEpisode()
-            }
-            : {
-                name: game.i18n.localize(MODULE.ID + '.context-obs-record-episode'),
-                icon: 'fa-solid fa-circle-play',
-                onClick: () => this._startStudioRecordingEpisode()
-            }];
+        // Every rule set is clicked the same way (_fireStudioRuleSet): Studio itself says, per
+        // rule set and computed fresh each time, exactly which fields it still needs answered
+        // (`prompts` — empty once a field already holds a value, e.g. Description after it's
+        // been set once). Herald never hardcodes which fields matter or tracks "already answered"
+        // itself; Studio's own state is the only source of truth for that.
+        const core = [];
 
         const ruleSets = Array.isArray(capabilities.ruleSets) ? capabilities.ruleSets : [];
         if (ruleSets.length) {
-            core.push(...ruleSets.map((rule) => ({
-                name: rule.name || rule.event,
-                icon: studioRuleIcon(rule),
-                onClick: () => this._sendStudioCommand(rule.event)
-            })));
+            // Rule sets carry their own `group` (same idea as actions' group) -- an empty/missing
+            // one stays a flat top-level item, a named one collects into its own flyout.
+            const ungroupedRules = [];
+            const ruleGroups = new Map();
+            for (const rule of ruleSets) {
+                const item = {
+                    name: rule.name || rule.event,
+                    icon: studioRuleIcon(rule),
+                    onClick: () => this._fireStudioRuleSet(rule)
+                };
+                if (rule.group) {
+                    if (!ruleGroups.has(rule.group)) ruleGroups.set(rule.group, []);
+                    ruleGroups.get(rule.group).push(item);
+                } else {
+                    ungroupedRules.push(item);
+                }
+            }
+            core.push(...ungroupedRules);
+            for (const [groupName, items] of ruleGroups) {
+                core.push({
+                    name: groupName,
+                    icon: STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group',
+                    submenu: items
+                });
+            }
         } else {
             core.push({ name: game.i18n.localize(MODULE.ID + '.context-obs-no-rules'), icon: 'fa-solid fa-circle-info' });
         }
@@ -3526,6 +3535,18 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                         icon: scene.current ? 'fa-solid fa-circle-check' : 'fa-solid fa-clapperboard',
                         onClick: () => this._sendStudioAction(item.action, scene.name)
                     }));
+                }
+                // setMetadataField needs two inputs (which field, and its value) -- the generic
+                // single-prompt flow below only collects one and would send it as the field key
+                // with no value at all. (Most rule-set-driven field writes -- e.g. session title/
+                // description -- go through a rule set's own `prompts` via _fireStudioRuleSet
+                // instead; this is the escape hatch for setting an arbitrary field directly.)
+                if (item.paramType === 'metadataField') {
+                    return [{
+                        name: humanizeStudioAction(item.action),
+                        icon: STUDIO_ACTION_ICONS[item.action] || 'fa-solid fa-bolt',
+                        onClick: () => this._triggerStudioMetadataFieldAction(item)
+                    }];
                 }
                 return [{
                     name: humanizeStudioAction(item.action),
@@ -3604,38 +3625,149 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
     }
 
     /**
-     * Prompt the GM for Episode Title, then fire Studio's EXISTING `session:StartRecording`
-     * event (the rule set that actually starts OBS + the scene sequence) with `heraldTitle` in
-     * `data`, so the later `uploadToYouTube` stage chained off `session:StopRecording` can
-     * resolve it. A title is required — cancelling here means recording never starts, since a
-     * recording with no title isn't worth uploading.
+     * Fire a rule-set event, prompting first for whatever fields Studio currently says it needs.
+     * Re-checks `prompts` live right before firing rather than trusting the menu's (possibly
+     * stale-by-now) cached copy — Studio's own state can change between menu-open and click (a
+     * field already answered elsewhere no longer needs asking). If Studio still rejects the POST
+     * because a field it considers blank wasn't supplied (a race between the re-check and the
+     * fire, or a field that was cleared in between), re-checks once more and re-prompts rather
+     * than failing silently.
+     * @param {{name?: string, event: string}} rule
      * @private
      */
-    static async _startStudioRecordingEpisode() {
-        const label = game.i18n.localize(MODULE.ID + '.context-obs-episode-title');
-        const title = await this._promptStudioText(label, label, false);
-        if (!title) return; // cancelled or empty -- don't start recording without one
-        this._studioPendingEpisodeTitle = title;
-        await this._sendStudioCommand('session:StartRecording', { heraldTitle: title });
+    static async _fireStudioRuleSet(rule) {
+        const label = rule.name || rule.event;
+        const promptDefs = await this._getFreshStudioPrompts(rule.event);
+        if (promptDefs === null) return; // couldn't verify current requirements -- don't fire blind
+
+        let answers = null;
+        if (promptDefs.length) {
+            answers = await this._collectStudioPrompts(label, promptDefs);
+            if (!answers) return; // cancelled
+        }
+
+        let result = await this._postStudioEvent(rule.event, answers);
+        if (!result.ok && result.status === 400 && /prompt/i.test(result.error || '')) {
+            const retryDefs = await this._getFreshStudioPrompts(rule.event);
+            if (retryDefs?.length) {
+                const retryAnswers = await this._collectStudioPrompts(label, retryDefs);
+                if (!retryAnswers) return;
+                result = await this._postStudioEvent(rule.event, retryAnswers);
+            }
+        }
+
+        if (result.ok) {
+            postConsoleAndNotification(MODULE.NAME, `Studio command sent: ${rule.event}`, "", true, false);
+            this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-command-sent'), label, 'fa-solid fa-clapperboard');
+        } else if (result.status !== 0) { // 0 = "not configured", already toasted by _postStudioEvent
+            postConsoleAndNotification(MODULE.NAME, `Studio command failed: ${rule.event}`, result.error, true, false);
+            this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-command-failed'), label, 'fa-solid fa-triangle-exclamation', '#e0546a');
+        }
     }
 
     /**
-     * Prompt the GM for Episode Description, then fire Studio's EXISTING `session:StopRecording`
-     * event with both `heraldTitle`/`heraldDescription` in `data` — this is the event whose
-     * `data` the chained `uploadToYouTube` rule stage actually resolves against, so both fields
-     * have to travel on this one request, not split across the start and stop events. Unlike the
-     * title prompt, cancelling here still stops the recording (an empty description), since
-     * leaving OBS recording indefinitely because a dialog was dismissed would be worse.
+     * Live (uncached) lookup of a specific rule set's current `prompts` — the fields Studio still
+     * needs answered before that event can run; empty means "just fire it." Opportunistically
+     * refreshes `_studioCapabilitiesCache` since the fetch already paid for it.
+     * @returns {Promise<Array|null>} prompt defs, or null if the fetch itself failed
      * @private
      */
-    static async _stopStudioRecordingEpisode() {
-        const label = game.i18n.localize(MODULE.ID + '.context-obs-episode-description');
-        const description = await this._promptStudioText(label, label, true);
-        await this._sendStudioCommand('session:StopRecording', {
-            heraldTitle: this._studioPendingEpisodeTitle,
-            heraldDescription: description || ''
-        });
-        this._studioPendingEpisodeTitle = '';
+    static async _getFreshStudioPrompts(eventName) {
+        const capabilities = await this._fetchStudioCapabilities();
+        if (!capabilities) return null;
+        this._studioCapabilitiesCache = capabilities;
+        const ruleSets = Array.isArray(capabilities.ruleSets) ? capabilities.ruleSets : [];
+        const match = ruleSets.find((r) => r.event === eventName);
+        return Array.isArray(match?.prompts) ? match.prompts : [];
+    }
+
+    /**
+     * One dialog collecting a text answer for each `{key, label}` prompt definition.
+     * @returns {Promise<Object|null>} `{key: value}` for every prompt, or null if cancelled
+     * @private
+     */
+    static async _collectStudioPrompts(title, promptDefs) {
+        const fields = promptDefs.map((p, i) =>
+            `<label style="display:flex;flex-direction:column;gap:4px;">${escapeHtml(p.label ?? p.key)}<input type="text" name="p${i}"${i === 0 ? ' autofocus' : ''}></label>`
+        ).join('');
+        try {
+            const answers = await foundry.applications.api.DialogV2.prompt({
+                window: { title },
+                content: `<div style="display:flex;flex-direction:column;gap:10px;">${fields}</div>`,
+                ok: {
+                    label: game.i18n.localize(MODULE.ID + '.context-obs-send'),
+                    callback: (_event, button) => {
+                        const result = {};
+                        promptDefs.forEach((p, i) => { result[p.key] = button.form.elements[`p${i}`].value.trim(); });
+                        return result;
+                    }
+                },
+                rejectClose: false
+            });
+            return answers || null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    /**
+     * Low-level POST to /api/automations/event. Returns a result object rather than showing
+     * toasts itself — `_fireStudioRuleSet` needs to distinguish "Studio wants a prompt we didn't
+     * supply" (retry) from an ordinary failure (report and stop), which a throw-and-catch can't
+     * cleanly express to the caller.
+     * @returns {Promise<{ok: boolean, status: number, error: string|null}>}
+     * @private
+     */
+    static async _postStudioEvent(eventName, prompts) {
+        const base = this._studioBaseUrl();
+        const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
+        if (!base || !token) {
+            const msg = game.i18n.localize(MODULE.ID + '.context-obs-not-configured');
+            postConsoleAndNotification(MODULE.NAME, msg, "", true, false);
+            this._showStudioToast(msg, '', 'fa-solid fa-triangle-exclamation', '#e0a94a');
+            return { ok: false, status: 0, error: msg };
+        }
+        try {
+            const response = await fetch(`${base}/api/automations/event`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(prompts && Object.keys(prompts).length ? { event: eventName, prompts } : { event: eventName })
+            });
+            const body = await response.json().catch(() => ({}));
+            return { ok: response.ok, status: response.status, error: body?.error ?? null };
+        } catch (e) {
+            return { ok: false, status: -1, error: e?.message ?? String(e) };
+        }
+    }
+
+    /**
+     * Write a value into a Studio Metadata field via the `setMetadataField` action
+     * (`{action: 'setMetadataField', param: fieldKey, data: {value}}` — `param` is the field
+     * *key* here, unlike every other action where `param` is the value itself).
+     * @returns {Promise<boolean>} whether the write succeeded
+     * @private
+     */
+    static async _setStudioMetadataField(fieldKey, value) {
+        return this._sendStudioAction('setMetadataField', fieldKey, { value });
+    }
+
+    /**
+     * Generic Studio Control flyout entry for `setMetadataField` (any other Text field Studio
+     * exposes it for, beyond sessionTitle/sessionDescription): two sequential prompts, field key
+     * then value, since it needs both and the single-prompt `_triggerStudioAction` flow does not
+     * support that.
+     * @private
+     */
+    static async _triggerStudioMetadataFieldAction(item) {
+        const actionLabel = humanizeStudioAction(item.action);
+        const fieldKey = await this._promptStudioText(actionLabel, game.i18n.localize(MODULE.ID + '.context-obs-metadata-field-key'), false);
+        if (!fieldKey) return;
+        const value = await this._promptStudioText(actionLabel, game.i18n.localize(MODULE.ID + '.context-obs-metadata-field-value'), false);
+        if (value == null) return;
+        await this._setStudioMetadataField(fieldKey, value);
     }
 
     /**
@@ -3668,17 +3800,20 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
      * POST a direct action to the Studio automation server (bypasses the event/rule layer —
      * synchronous: 200 means it actually ran, 400/500 carry a real `{error}` reason).
      * @param {string} action
-     * @param {string|null} param
+     * @param {string|null} param - for most actions, the target value (scene/source name); for
+     *   `setMetadataField` specifically, the Metadata field *key* — the value itself goes in `extraData.value`.
+     * @param {Object} [extraData] - optional `data` object riding alongside `{action, param}` (e.g. `{value}` for setMetadataField)
+     * @returns {Promise<boolean>} whether the action actually ran
      * @private
      */
-    static async _sendStudioAction(action, param) {
+    static async _sendStudioAction(action, param, extraData) {
         const base = this._studioBaseUrl();
         const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
         if (!base || !token) {
             const msg = game.i18n.localize(MODULE.ID + '.context-obs-not-configured');
             postConsoleAndNotification(MODULE.NAME, msg, "", true, false);
             this._showStudioToast(msg, '', 'fa-solid fa-triangle-exclamation', '#e0a94a');
-            return;
+            return false;
         }
         try {
             const response = await fetch(`${base}/api/automations/action`, {
@@ -3687,15 +3822,17 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ action, param: param ?? null })
+                body: JSON.stringify(extraData ? { action, param: param ?? null, data: extraData } : { action, param: param ?? null })
             });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+            const responseData = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(responseData?.error || `HTTP ${response.status}`);
             postConsoleAndNotification(MODULE.NAME, `Studio action ran: ${action}`, "", true, false);
             this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-action-ran'), humanizeStudioAction(action), STUDIO_ACTION_ICONS[action] || 'fa-solid fa-bolt');
+            return true;
         } catch (e) {
             postConsoleAndNotification(MODULE.NAME, `Studio action failed: ${action}`, e, true, false);
             this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-action-failed'), `${humanizeStudioAction(action)}: ${e.message}`, 'fa-solid fa-triangle-exclamation', '#e0546a');
+            return false;
         }
     }
 
@@ -3734,83 +3871,12 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const capabilities = await response.json();
-            if (!this._studioFieldsRegistered) this._registerStudioFields();
-            return capabilities;
+            return await response.json();
         } catch (e) {
             const msg = game.i18n.localize(MODULE.ID + '.context-obs-load-failed');
             postConsoleAndNotification(MODULE.NAME, msg, e, true, false);
             this._showStudioToast(msg, e?.message ?? '', 'fa-solid fa-triangle-exclamation', '#e0546a');
             return null;
-        }
-    }
-
-    /**
-     * Register Herald's own custom field keys with Studio (idempotent, fire-and-forget) so
-     * `uploadToYouTube` (and anything else) can resolve `heraldTitle`/`heraldDescription` from
-     * event `data`. Own-namespaced keys deliberately, not `sessionTitle`/`sessionDescription` —
-     * `resolveDataField` checks Studio's own Metadata fields first, and an existing Studio field
-     * with the same key would always win over whatever Herald sends.
-     * @private
-     */
-    static async _registerStudioFields() {
-        const base = this._studioBaseUrl();
-        const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
-        if (!base || !token) return;
-        try {
-            const response = await fetch(`${base}/api/automations/fields`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    module: 'herald',
-                    fields: [
-                        { key: 'heraldTitle', label: 'Episode Title' },
-                        { key: 'heraldDescription', label: 'Episode Description' }
-                    ]
-                })
-            });
-            if (response.ok) this._studioFieldsRegistered = true;
-        } catch (_) {
-            // silent -- retried on the next successful capabilities fetch
-        }
-    }
-
-    /**
-     * POST an event to the Studio automation server. URL/token come from world settings
-     * (never hardcoded here) so they stay out of module source and git history.
-     * @param {string} eventName
-     * @param {Object} [data] - optional field data (Herald-registered keys — see _registerStudioFields)
-     *   the triggered rule set's later stages (e.g. uploadToYouTube) can resolve against.
-     * @private
-     */
-    static async _sendStudioCommand(eventName, data) {
-        const base = this._studioBaseUrl();
-        const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
-        if (!base || !token) {
-            const msg = game.i18n.localize(MODULE.ID + '.context-obs-not-configured');
-            postConsoleAndNotification(MODULE.NAME, msg, "", true, false);
-            this._showStudioToast(msg, '', 'fa-solid fa-triangle-exclamation', '#e0a94a');
-            return;
-        }
-        const url = `${base}/api/automations/event`;
-        try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data ? { event: eventName, data } : { event: eventName })
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            postConsoleAndNotification(MODULE.NAME, `Studio command sent: ${eventName}`, "", true, false);
-            this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-command-sent'), eventName, 'fa-solid fa-clapperboard');
-        } catch (e) {
-            postConsoleAndNotification(MODULE.NAME, `Studio command failed: ${eventName}`, e, true, false);
-            this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-command-failed'), eventName, 'fa-solid fa-triangle-exclamation', '#e0546a');
         }
     }
 
