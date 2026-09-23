@@ -6,16 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+
+## [14.0.4]
+
+### Added
+
+- **Studio rule sets that need information first are handled automatically**: Studio now reports, per rule set, exactly which fields it still needs answered before that event can run (`prompts` on each `ruleSets` entry — computed live server-side). Clicking a rule set that currently needs something opens a small dialog built from Studio's own field labels and POSTs `{event, prompts}` with the answers; clicking one that doesn't just fires immediately. A field already answered isn't asked for again, and Studio's own automation (e.g. a `clearMetadataField` step after upload) is what resets it — Herald tracks none of this itself.
+  - Prompts are **re-checked live at click time** (`_getFreshStudioPrompts`), not read from the capabilities cache the menu was built from. Whether a field still needs asking can change between the menu opening and the click. If Studio rejects the POST with `400` mentioning "prompt" (a race between that check and the fire), Herald re-checks and re-prompts once rather than failing silently. Cancelling the dialog cancels the click — nothing fires.
+  - Description-ish fields (`key` or `label` matching `/description/i`) use a textarea; everything else stays a single-line input. Studio's prompt defs carry no field-type hint, so the match is by name.
+  - **No Herald-side settings, field-key mapping, or "already answered" flag.** A rule set Studio wires up with new prompts tomorrow works today. `setMetadataField` still surfaces in the **Studio Control** flyout as a manual escape hatch (`paramType: 'metadataField'` — two sequential prompts for key then value, because the generic single-prompt action flow would send the typed value as the field *key* with no `data.value` at all).
+  - Two earlier designs were tried and abandoned before this shipped — carrying title/description as event `data` (filename templates and YouTube pickers never read event `data`; they read Studio Metadata fields), and a bespoke Record Episode / Stop & Upload flow with hardcoded `sessionTitle`/`sessionDescription` keys plus a Herald-side "already answered" flag. Neither matched how Studio actually resolves values. See [Studio integration architecture](documentation/architecture/architecture-studio-integration.md).
+
+### Changed
+
+- **Studio rule sets group into flyouts when Studio assigns them a `group`** (e.g. everything under "Recording"). Ungrouped rule sets stay one-click items at the top of the menu. The grouping is Studio's, not a Herald-side list. See [Studio (OBS) control](documentation/userguides/userguide-gm.md#studio-obs-control).
+
 ## [14.0.3]
 
 ### Added
 
 - **Studio (OBS) menubar button**: a GM-only **Studio** control in Blacksmith's menubar, separate from View Mode, for driving a Coffee Pub Studio automation server directly from Foundry.
   - New settings **Studio Server URL** and **Studio API Token** (world-scope; never hardcoded, so a credential never ships in module source or git history).
-  - The menu is built live from Studio's `GET /api/automations/capabilities` every time it opens (cached; **Options → Refresh Automations** forces a re-fetch): configured rule sets appear as one-click items (grouped into their own flyout when Studio assigns them a `group`, e.g. "Recording"), the full action catalog is grouped into **Scenes / Sources / Controls / Studio Control** flyouts, actual OBS scene names and source names are offered directly (a dropdown for sources, one-click entries for scenes with the current scene checked) rather than typed free text.
+  - The menu is built live from Studio's `GET /api/automations/capabilities` every time it opens (cached; **Options → Refresh Automations** forces a re-fetch): configured rule sets appear as one-click items, the full action catalog is grouped into **Scenes / Sources / Controls / Studio Control** flyouts, actual OBS scene names and source names are offered directly (a dropdown for sources, one-click entries for scenes with the current scene checked) rather than typed free text.
   - A recording indicator: the button's icon pulses red while Studio reports OBS is actually recording (`GET /api/automations/status`, polled every 2.5s), independent of which button was last clicked — it reflects real OBS state whether recording started/stopped from this menu, from inside OBS directly, or an automation call failed silently.
   - User-facing feedback for Studio actions uses Blacksmith's toast API rather than Foundry's core notification banner.
-  - **Rule sets that need information first are handled automatically**: Studio now reports, per rule set, exactly which fields it still needs answered before that event can run (`prompts`, computed live and re-checked at the moment of firing — a field already answered isn't asked for again). Clicking a rule set that currently needs something opens a small dialog built from Studio's own field labels; clicking one that doesn't just fires immediately. No Herald-side settings, field-key mapping, or "already answered" tracking involved — Studio's own state is the only source of truth. (Two earlier designs for this were tried and abandoned before shipping — carrying title/description as event `data`, and a bespoke Record/Update Description/Stop flow with hardcoded field names — neither matched how Studio actually resolves values; see the architecture doc for what didn't work and why.)
   - See [Studio (OBS) control](documentation/userguides/userguide-gm.md#studio-obs-control) and [Studio integration architecture](documentation/architecture/architecture-studio-integration.md).
 
 ## [14.0.2]
