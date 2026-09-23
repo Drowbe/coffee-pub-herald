@@ -3687,9 +3687,16 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
      * @private
      */
     static async _collectStudioPrompts(title, promptDefs) {
-        const fields = promptDefs.map((p, i) =>
-            `<label style="display:flex;flex-direction:column;gap:4px;">${escapeHtml(p.label ?? p.key)}<input type="text" name="p${i}"${i === 0 ? ' autofocus' : ''}></label>`
-        ).join('');
+        // Studio's prompt defs are just {key, label} -- no field-type hint -- so "description"-ish
+        // ones get a textarea by name match rather than a single-line input that hides most of
+        // what's typed.
+        const fields = promptDefs.map((p, i) => {
+            const isMultiline = /description/i.test(`${p.key} ${p.label ?? ''}`);
+            const field = isMultiline
+                ? `<textarea name="p${i}" rows="4"${i === 0 ? ' autofocus' : ''}></textarea>`
+                : `<input type="text" name="p${i}"${i === 0 ? ' autofocus' : ''}>`;
+            return `<label style="display:flex;flex-direction:column;gap:4px;">${escapeHtml(p.label ?? p.key)}${field}</label>`;
+        }).join('');
         try {
             const answers = await foundry.applications.api.DialogV2.prompt({
                 window: { title },
