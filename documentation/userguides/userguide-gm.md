@@ -71,3 +71,5 @@ Left-click it to open the menu:
 - **Options → Refresh Automations** — Herald caches what Studio reports so opening the menu doesn't hit the network every time. If you just changed something on Studio's side (added a rule set, ticked on a new action), refresh here to see it reflected.
 
 The Studio button itself tells you whether OBS is actually recording: the icon turns into a pulsing red dot when Studio reports `recording: true`, and reverts the moment it isn't — whether recording was stopped from this menu, from inside OBS directly, or failed silently. It is polled every few seconds, not tied to which button you last clicked.
+
+If the Studio machine is off or the address does not answer, the button switches to a grey unplugged icon ("Studio server unreachable") and stops asking. Left-click then opens a short menu — **Studio server unreachable** and **Retry connection** — instead of the automations list. Retry makes one attempt. If Studio answers, the button goes back to normal and the recording poll starts again. If it doesn't, the button stays unplugged and the same menu is what you get next time. Nothing calls the server on its own after the first refusal.

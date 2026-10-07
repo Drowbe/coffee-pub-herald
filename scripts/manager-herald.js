@@ -148,11 +148,15 @@ export class HeraldManager {
      */
     static TOAST_WATCHDOG_POLL_MS = 1000;
 
-    /** Poll cadence for the Studio recording indicator. Studio answers from its own internal
-     *  2s OBS poll cache, so polling faster than that gains nothing. */
+    /** Poll cadence for the Studio recording indicator while the server is answering.
+     *  Studio answers from its own internal 2s OBS poll cache, so polling faster than that gains nothing.
+     *  A refused connection stops this poll; it resumes only from the menu's Retry connection. */
     static STUDIO_STATUS_POLL_MS = 2500;
-    static _studioStatusPollIntervalId = null;
-    static _studioLastRecording = null; // null = unknown yet; avoids a redundant menubar re-register per tick
+    static _studioStatusPollTimerId = null;
+    static _studioStatusPollActive = false;
+    static _studioPollGeneration = 0; // bumped on stop/pause so an in-flight poll cannot reschedule itself
+    /** 'idle' | 'recording' | 'unreachable'. Re-register the menubar tool only when this changes. */
+    static _studioIndicatorMode = 'idle';
 
     /**
      * Settings read heavily during camera follow / pan / zoom paths.
@@ -3327,7 +3331,7 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         const api = this._blacksmith;
         if (!api || typeof api.registerMenubarTool !== 'function') return;
 
-        const success = api.registerMenubarTool('studio-obs', this._studioMenubarToolConfig(false));
+        const success = api.registerMenubarTool('studio-obs', this._studioMenubarToolConfig('idle'));
 
         if (success) {
             postConsoleAndNotification(MODULE.NAME, "HeraldManager: OBS menubar button registered", "", true, false);
@@ -3338,16 +3342,28 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
     }
 
     /**
-     * registerMenubarTool config for the Studio button. `recording` swaps both icon and
-     * iconColor together (a plain iconColor-only change is too subtle to read as "recording").
+     * registerMenubarTool config for the Studio button. `mode` swaps both icon and
+     * iconColor together (a plain iconColor-only change is too subtle to read as "recording"
+     * or "unreachable").
+     * @param {'idle'|'recording'|'unreachable'} mode
      * @private
      */
-    static _studioMenubarToolConfig(recording) {
+    static _studioMenubarToolConfig(mode) {
+        const recording = mode === 'recording';
+        const unreachable = mode === 'unreachable';
         return {
-            icon: recording ? 'fa-solid fa-circle-dot' : 'fa-solid fa-clapperboard',
+            icon: recording
+                ? 'fa-solid fa-circle-dot'
+                : unreachable
+                    ? 'fa-solid fa-plug-circle-xmark'
+                    : 'fa-solid fa-clapperboard',
             name: 'studio-obs',
             title: () => 'Studio',
-            tooltip: () => recording ? 'Studio commands (recording)' : 'Studio commands',
+            tooltip: () => unreachable
+                ? 'Studio server unreachable'
+                : recording
+                    ? 'Studio commands (recording)'
+                    : 'Studio commands',
             zone: 'right',
             group: 'general',
             groupOrder: 998,
@@ -3358,7 +3374,7 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             visible: () => true,
             toggleable: false,
             active: false,
-            iconColor: recording ? '#c9412d' : null,
+            iconColor: recording ? '#c9412d' : unreachable ? '#8b8b8b' : null,
             buttonNormalTint: null,
             buttonSelectedTint: null,
             onClick: async (event) => {
@@ -3370,68 +3386,204 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
     }
 
     /**
-     * Re-register the Studio button with the given recording state (icon/iconColor are only
+     * Re-register the Studio button for a connection/recording mode (icon/iconColor are only
      * covered by the re-register path, per Blacksmith's menubar contract — no lighter update
      * exists for swapping the icon itself, only for iconColor alone).
+     * @param {'idle'|'recording'|'unreachable'} mode
      * @private
      */
-    static _setStudioRecordingIndicator(recording) {
+    static _setStudioIndicator(mode) {
         const api = this._blacksmith;
         if (!api?.unregisterMenubarTool || !api?.registerMenubarTool) return;
         api.unregisterMenubarTool('studio-obs');
-        api.registerMenubarTool('studio-obs', this._studioMenubarToolConfig(recording));
+        api.registerMenubarTool('studio-obs', this._studioMenubarToolConfig(mode));
     }
 
     /**
      * Begin polling Studio's /api/automations/status so the Studio button reflects actual OBS
      * recording state (idempotent). GM-only: no point in every connected client's browser
-     * separately hitting Studio's server for a gmOnly button.
+     * separately hitting Studio's server for a gmOnly button. Does nothing until both the
+     * URL and token are set — an unconfigured button has nothing to poll.
      * @private
      */
     static _startStudioStatusPoll() {
         this._stopStudioStatusPoll();
-        this._studioStatusPollIntervalId = this._trackedSetInterval(() => {
-            this._pollStudioStatus();
-        }, this.STUDIO_STATUS_POLL_MS);
+        if (!this._studioBaseUrl() || !getSettingSafely(MODULE.ID, 'studioApiToken', '')) return;
+        this._studioStatusPollActive = true;
+        this._scheduleStudioStatusPoll(0, this._studioPollGeneration);
     }
 
     /**
-     * Stop polling Studio's recording status and reset the indicator back to default.
+     * Queue the next status poll. Replaces any wait already queued. `generation` must match
+     * `_studioPollGeneration` when the timer fires, so a stop or a kick during the wait drops it.
+     * @private
+     */
+    static _scheduleStudioStatusPoll(delay, generation) {
+        if (!this._studioStatusPollActive || generation !== this._studioPollGeneration) return;
+        if (this._studioStatusPollTimerId != null) {
+            this._trackedClearTimeout(this._studioStatusPollTimerId);
+        }
+        this._studioStatusPollTimerId = this._trackedSetTimeout(() => {
+            this._studioStatusPollTimerId = null;
+            this._pollStudioStatus(generation);
+        }, delay);
+    }
+
+    /**
+     * Stop the status timer without touching the menubar icon. Used when the connection is
+     * refused: the unreachable icon has to stay up, and nothing may schedule another attempt.
+     * @private
+     */
+    static _pauseStudioStatusPoll() {
+        this._studioPollGeneration++;
+        this._studioStatusPollActive = false;
+        if (this._studioStatusPollTimerId != null) {
+            this._trackedClearTimeout(this._studioStatusPollTimerId);
+            this._studioStatusPollTimerId = null;
+        }
+    }
+
+    /**
+     * Stop polling Studio's recording status and reset the indicator back to idle.
      * @private
      */
     static _stopStudioStatusPoll() {
-        if (this._studioStatusPollIntervalId != null) {
-            this._trackedClearInterval(this._studioStatusPollIntervalId);
-            this._studioStatusPollIntervalId = null;
-        }
-        if (this._studioLastRecording) this._setStudioRecordingIndicator(false);
-        this._studioLastRecording = null;
+        this._pauseStudioStatusPoll();
+        if (this._studioIndicatorMode !== 'idle') this._setStudioIndicator('idle');
+        this._studioIndicatorMode = 'idle';
+    }
+
+    /**
+     * A user-driven Studio request just succeeded while the status poll was stopped
+     * (connection refused). Resume it. A poll that is already running is left alone —
+     * this is not a background retry.
+     * @private
+     */
+    static _kickStudioStatusPoll() {
+        if (this._studioStatusPollActive) return;
+        this._startStudioStatusPoll();
+    }
+
+    /**
+     * fetch() rejects with TypeError when nothing accepts the connection (Chrome logs
+     * `net::ERR_CONNECTION_REFUSED`). An HTTP error response is a normal Error thrown
+     * after the server answered, and is not this.
+     * @param {unknown} error
+     * @returns {boolean}
+     * @private
+     */
+    static _isStudioNetworkError(error) {
+        return error instanceof TypeError;
     }
 
     /**
      * One poll tick: fetch Studio's OBS status and update the Studio button's indicator only
-     * on an actual state change. Silent on failure/unconfigured (runs every 2.5s; a toast per
-     * tick would spam).
+     * on an actual state change. A refused connection stops the poll (logged once). The
+     * browser prints `net::ERR_CONNECTION_REFUSED` for every attempt, so the next attempt
+     * waits for Retry connection in the Studio menu.
      * @private
      */
-    static async _pollStudioStatus() {
+    static async _pollStudioStatus(generation) {
+        if (generation !== this._studioPollGeneration) return;
         const base = this._studioBaseUrl();
         const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
-        if (!base || !token) return;
+        if (!base || !token) {
+            this._stopStudioStatusPoll();
+            return;
+        }
         try {
             const response = await fetch(`${base}/api/automations/status`, {
                 cache: 'no-store',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            if (!response.ok) return;
-            const data = await response.json();
-            const recording = data?.obsConnected ? !!data.recording : false;
-            if (recording === this._studioLastRecording) return;
-            this._studioLastRecording = recording;
-            this._setStudioRecordingIndicator(recording);
-        } catch (_) {
-            // transient network/cert hiccup — next tick tries again
+            if (generation !== this._studioPollGeneration) return;
+            if (response.ok) {
+                const data = await response.json();
+                if (generation !== this._studioPollGeneration) return;
+                this._noteStudioReachable(data?.obsConnected ? !!data.recording : false);
+            }
+        } catch (e) {
+            if (generation !== this._studioPollGeneration) return;
+            if (this._isStudioNetworkError(e)) {
+                this._noteStudioConnectionRefused();
+                return;
+            }
         }
+        this._scheduleStudioStatusPoll(this.STUDIO_STATUS_POLL_MS, generation);
+    }
+
+    /**
+     * Status poll got a body. Drop the unreachable icon if it is still showing.
+     * @param {boolean} recording
+     * @private
+     */
+    static _noteStudioReachable(recording) {
+        const mode = recording ? 'recording' : 'idle';
+        const wasUnreachable = this._studioIndicatorMode === 'unreachable';
+        if (wasUnreachable) {
+            postConsoleAndNotification(MODULE.NAME, "HeraldManager: Studio automation server reachable again", "", true, false);
+        }
+        if (mode !== this._studioIndicatorMode) {
+            this._studioIndicatorMode = mode;
+            this._setStudioIndicator(mode);
+        }
+    }
+
+    /**
+     * Nothing accepted the connection. Stop the status poll, switch the button to
+     * unreachable, and log once. The Studio menu then offers Retry connection; nothing
+     * here schedules another request.
+     * @private
+     */
+    static _noteStudioConnectionRefused() {
+        this._pauseStudioStatusPoll();
+        if (this._studioIndicatorMode === 'unreachable') return;
+        this._studioIndicatorMode = 'unreachable';
+        this._setStudioIndicator('unreachable');
+        postConsoleAndNotification(
+            MODULE.NAME,
+            "HeraldManager: Studio automation server unreachable; status polling stopped until Retry connection",
+            "",
+            true,
+            false
+        );
+    }
+
+    /**
+     * Menu shown in place of the automations list while the server is refusing connections.
+     * Opening it does not touch the network.
+     * @returns {{core: Array}}
+     * @private
+     */
+    static _studioRetryMenu() {
+        return {
+            core: [
+                {
+                    name: game.i18n.localize(MODULE.ID + '.context-obs-unreachable'),
+                    icon: 'fa-solid fa-plug-circle-xmark'
+                },
+                {
+                    name: game.i18n.localize(MODULE.ID + '.context-obs-retry'),
+                    icon: 'fa-solid fa-rotate',
+                    onClick: () => this._retryStudioConnection()
+                }
+            ]
+        };
+    }
+
+    /**
+     * One explicit attempt to reach Studio again, from the Retry connection menu item.
+     * Success replaces the capabilities cache and resumes the recording poll. Failure
+     * leaves the button unreachable; the menu stays the retry menu on the next open.
+     * @private
+     */
+    static async _retryStudioConnection() {
+        this._studioCapabilitiesCache = null;
+        const capabilities = await this._fetchStudioCapabilities();
+        if (!capabilities) return;
+        this._studioCapabilitiesCache = capabilities;
+        postConsoleAndNotification(MODULE.NAME, "HeraldManager: Studio automation server reachable again", "", true, false);
+        this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-retry-ok'), '', 'fa-solid fa-plug');
     }
 
     /**
@@ -3473,8 +3625,14 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
      * @private
      */
     static async _getObsMenuItems() {
-        const capabilities = this._studioCapabilitiesCache ?? await this._fetchStudioCapabilities();
-        if (!capabilities) return null;
+        // A refused connection must not fetch on every click — that is another
+        // ERR_CONNECTION_REFUSED. The menu is only the retry action until one succeeds.
+        if (this._studioIndicatorMode === 'unreachable') return this._studioRetryMenu();
+        const capabilities = this._studioCapabilitiesCache ?? await this._fetchStudioCapabilities({ silentNetworkFailure: true });
+        if (!capabilities) {
+            if (this._studioIndicatorMode === 'unreachable') return this._studioRetryMenu();
+            return null;
+        }
         this._studioCapabilitiesCache = capabilities;
 
         // Every rule set is clicked the same way (_fireStudioRuleSet): Studio itself says, per
@@ -3744,8 +3902,10 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                 body: JSON.stringify(prompts && Object.keys(prompts).length ? { event: eventName, prompts } : { event: eventName })
             });
             const body = await response.json().catch(() => ({}));
+            if (response.ok) this._kickStudioStatusPoll();
             return { ok: response.ok, status: response.status, error: body?.error ?? null };
         } catch (e) {
+            if (this._isStudioNetworkError(e)) this._noteStudioConnectionRefused();
             return { ok: false, status: -1, error: e?.message ?? String(e) };
         }
     }
@@ -3833,10 +3993,12 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             });
             const responseData = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(responseData?.error || `HTTP ${response.status}`);
+            this._kickStudioStatusPoll();
             postConsoleAndNotification(MODULE.NAME, `Studio action ran: ${action}`, "", true, false);
             this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-action-ran'), humanizeStudioAction(action), STUDIO_ACTION_ICONS[action] || 'fa-solid fa-bolt');
             return true;
         } catch (e) {
+            if (this._isStudioNetworkError(e)) this._noteStudioConnectionRefused();
             postConsoleAndNotification(MODULE.NAME, `Studio action failed: ${action}`, e, true, false);
             this._showStudioToast(game.i18n.localize(MODULE.ID + '.context-obs-action-failed'), `${humanizeStudioAction(action)}: ${e.message}`, 'fa-solid fa-triangle-exclamation', '#e0546a');
             return false;
@@ -3858,10 +4020,12 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
 
     /**
      * GET the Studio server's current automations capabilities (fixed `actions` + live `ruleSets`).
+     * @param {{silentNetworkFailure?: boolean}} [options] - when opening the menu, a refused
+     *   connection is reported by the retry menu itself, not a toast on top of it.
      * @returns {Promise<{actions: Array, ruleSets: Array}|null>}
      * @private
      */
-    static async _fetchStudioCapabilities() {
+    static async _fetchStudioCapabilities({ silentNetworkFailure = false } = {}) {
         const base = this._studioBaseUrl();
         const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
         if (!base || !token) {
@@ -3878,9 +4042,13 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            this._kickStudioStatusPoll();
             return await response.json();
         } catch (e) {
-            const msg = game.i18n.localize(MODULE.ID + '.context-obs-load-failed');
+            const network = this._isStudioNetworkError(e);
+            if (network) this._noteStudioConnectionRefused();
+            if (network && silentNetworkFailure) return null;
+            const msg = game.i18n.localize(MODULE.ID + (network ? '.context-obs-retry-failed' : '.context-obs-load-failed'));
             postConsoleAndNotification(MODULE.NAME, msg, e, true, false);
             this._showStudioToast(msg, e?.message ?? '', 'fa-solid fa-triangle-exclamation', '#e0546a');
             return null;

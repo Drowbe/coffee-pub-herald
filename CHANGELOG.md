@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [14.0.4]
 
+### Fixed
+
+- **Studio status poll stops when the server refuses the connection.** With a Studio URL and token saved, Herald asked `GET /api/automations/status` every 2.5s for the whole session. When nothing was listening, the browser logged `net::ERR_CONNECTION_REFUSED` on every tick — the JavaScript `catch` cannot hide that network-panel line. After the first refusal the Studio button shows unreachable and the poll stops. Left-click opens a menu with **Retry connection** instead of the automations list; that click does not contact the server. Retry makes one attempt, and only a success resumes the 2.5-second recording poll. The poll does not start at all until both the URL and the token are set.
+
 ### Added
 
 - **Studio rule sets that need information first are handled automatically**: Studio now reports, per rule set, exactly which fields it still needs answered before that event can run (`prompts` on each `ruleSets` entry — computed live server-side). Clicking a rule set that currently needs something opens a small dialog built from Studio's own field labels and POSTs `{event, prompts}` with the answers; clicking one that doesn't just fires immediately. A field already answered isn't asked for again, and Studio's own automation (e.g. a `clearMetadataField` step after upload) is what resets it — Herald tracks none of this itself.
