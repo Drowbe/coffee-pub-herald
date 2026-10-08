@@ -2677,17 +2677,14 @@ this._blacksmith.HookManager.registerHook({
         if (!ContextMenu?.show) return;
 
         const toZoneEntry = (it) => {
+            if (it?.separator) return { separator: true };
             const entry = {
                 name: it.name,
                 icon: it.icon ?? '',
                 callback: typeof it.onClick === 'function' ? it.onClick : undefined
             };
             if (it.submenu?.length) {
-                entry.submenu = it.submenu.map((sub) => ({
-                    name: sub.name,
-                    icon: sub.icon ?? '',
-                    callback: typeof sub.onClick === 'function' ? sub.onClick : undefined
-                }));
+                entry.submenu = it.submenu.map(toZoneEntry);
             }
             return entry;
         };
@@ -3669,104 +3666,149 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         // (`prompts` — empty once a field already holds a value, e.g. Description after it's
         // been set once). Herald never hardcodes which fields matter or tracks "already answered"
         // itself; Studio's own state is the only source of truth for that.
-        const core = [];
 
         const ruleSets = Array.isArray(capabilities.ruleSets) ? capabilities.ruleSets : [];
-        if (ruleSets.length) {
-            // Rule sets carry their own `group` (same idea as actions' group) -- an empty/missing
-            // one stays a flat top-level item, a named one collects into its own flyout.
-            const ungroupedRules = [];
-            const ruleGroups = new Map();
-            for (const rule of ruleSets) {
-                const item = {
-                    name: rule.name || rule.event,
-                    icon: studioRuleIcon(rule),
-                    onClick: () => this._fireStudioRuleSet(rule)
-                };
-                if (rule.group) {
-                    if (!ruleGroups.has(rule.group)) ruleGroups.set(rule.group, []);
-                    ruleGroups.get(rule.group).push(item);
-                } else {
-                    ungroupedRules.push(item);
-                }
+        const ungroupedRules = [];
+        const ruleGroups = new Map();
+        for (const rule of ruleSets) {
+            const item = {
+                name: rule.name || rule.event,
+                icon: studioRuleIcon(rule),
+                onClick: () => this._fireStudioRuleSet(rule)
+            };
+            if (rule.group) {
+                if (!ruleGroups.has(rule.group)) ruleGroups.set(rule.group, []);
+                ruleGroups.get(rule.group).push(item);
+            } else {
+                ungroupedRules.push(item);
             }
-            core.push(...ungroupedRules);
-            for (const [groupName, items] of ruleGroups) {
-                core.push({
-                    name: groupName,
-                    icon: STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group',
-                    submenu: items
-                });
-            }
-        } else {
-            core.push({ name: game.i18n.localize(MODULE.ID + '.context-obs-no-rules'), icon: 'fa-solid fa-circle-info' });
         }
 
-        // Full action catalog, grouped (Scenes/Sources/Controls/Studio Control) into flyouts —
-        // these call /api/automations/action directly, independent of whether a rule exists.
         const actions = Array.isArray(capabilities.actions) ? capabilities.actions : [];
-        const groups = new Map();
+        const actionGroups = new Map();
         for (const item of actions) {
             const groupName = item.group || STUDIO_ACTION_GROUPS[item.action] || 'Other';
-            if (!groups.has(groupName)) groups.set(groupName, []);
-            groups.get(groupName).push(item);
+            if (!actionGroups.has(groupName)) actionGroups.set(groupName, []);
+            actionGroups.get(groupName).push(item);
         }
         const scenes = studioSceneEntries(capabilities.scenes);
-        for (const [groupName, items] of groups) {
-            const submenu = items.flatMap((item) => {
-                // Scene Switch (and any other scene-targeted action) is the scene list itself.
-                // Blacksmith menus only nest one submenu level, and this item already lives under
-                // the Scenes flyout — so the flyout contents are the scene names, one click each.
-                // A typed "Scene name" box is what you get when this match fails, and it is the
-                // wrong control: Studio already told us the names.
-                if (isStudioSceneAction(item)) {
-                    if (!scenes.length) {
-                        return [{
-                            name: game.i18n.localize(MODULE.ID + '.context-obs-no-scenes'),
-                            icon: 'fa-solid fa-circle-info'
-                        }];
-                    }
-                    return scenes.map((scene) => ({
-                        name: scene.name,
-                        icon: scene.current ? 'fa-solid fa-circle-check' : 'fa-solid fa-clapperboard',
-                        onClick: () => this._sendStudioAction(item.action, scene.name)
-                    }));
-                }
-                // setMetadataField needs two inputs (which field, and its value) -- the generic
-                // single-prompt flow below only collects one and would send it as the field key
-                // with no value at all. (Most rule-set-driven field writes -- e.g. session title/
-                // description -- go through a rule set's own `prompts` via _fireStudioRuleSet
-                // instead; this is the escape hatch for setting an arbitrary field directly.)
-                if (item.paramType === 'metadataField') {
+        const actionEntries = (items) => items.flatMap((item) => {
+            // Scene Switch is the scene list itself. Those names are this flyout's contents
+            // (one click each). A typed scene name is the wrong control: Studio already sent them.
+            if (isStudioSceneAction(item)) {
+                if (!scenes.length) {
                     return [{
-                        name: humanizeStudioAction(item.action),
-                        icon: STUDIO_ACTION_ICONS[item.action] || 'fa-solid fa-bolt',
-                        onClick: () => this._triggerStudioMetadataFieldAction(item)
+                        name: game.i18n.localize(MODULE.ID + '.context-obs-no-scenes'),
+                        icon: 'fa-solid fa-circle-info'
                     }];
                 }
+                return scenes.map((scene) => ({
+                    name: scene.name,
+                    icon: scene.current ? 'fa-solid fa-circle-check' : 'fa-solid fa-clapperboard',
+                    onClick: () => this._sendStudioAction(item.action, scene.name)
+                }));
+            }
+            // setMetadataField needs two inputs (which field, and its value) -- the generic
+            // single-prompt flow below only collects one and would send it as the field key
+            // with no value at all.
+            if (item.paramType === 'metadataField') {
                 return [{
                     name: humanizeStudioAction(item.action),
                     icon: STUDIO_ACTION_ICONS[item.action] || 'fa-solid fa-bolt',
-                    onClick: () => this._triggerStudioAction(item)
+                    onClick: () => this._triggerStudioMetadataFieldAction(item)
                 }];
-            });
-            core.push({
-                name: groupName,
-                icon: STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group',
-                submenu
-            });
+            }
+            return [{
+                name: humanizeStudioAction(item.action),
+                icon: STUDIO_ACTION_ICONS[item.action] || 'fa-solid fa-bolt',
+                onClick: () => this._triggerStudioAction(item)
+            }];
+        });
+
+        const groupKey = (name) => String(name || '').trim().toLowerCase();
+        const takeGroup = (map, name) => {
+            const want = groupKey(name);
+            for (const key of map.keys()) {
+                if (groupKey(key) === want) {
+                    const items = map.get(key);
+                    map.delete(key);
+                    return items;
+                }
+            }
+            return null;
+        };
+        const flyout = (name, icon, submenu) => (submenu?.length ? { name, icon, submenu } : null);
+
+        const begin = [];
+        const end = [];
+        const otherRules = [];
+        for (const item of ungroupedRules) {
+            const name = groupKey(item.name);
+            if (name === 'begin session recording') begin.push(item);
+            else if (name === 'end session recording') end.push(item);
+            else otherRules.push(item);
         }
 
-        core.push({
-            name: game.i18n.localize(MODULE.ID + '.context-obs-options'),
-            icon: 'fa-solid fa-gear',
-            submenu: [
-                {
-                    name: game.i18n.localize(MODULE.ID + '.context-obs-refresh'),
-                    icon: 'fa-solid fa-rotate',
-                    onClick: () => this._refreshStudioCapabilities()
-                }
-            ]
+        const recording = this._studioIndicatorMode === 'recording';
+        const pause = actions.find((item) => item.action === 'pauseRecording');
+        const resume = actions.find((item) => item.action === 'resumeRecording');
+        const pauseResumeAction = recording ? (pause || resume) : (resume || pause);
+        const pauseResume = pauseResumeAction ? {
+            name: game.i18n.localize(MODULE.ID + '.context-obs-pause-resume'),
+            icon: recording ? 'fa-solid fa-pause' : 'fa-solid fa-circle-play',
+            onClick: () => this._sendStudioAction(pauseResumeAction.action, null)
+        } : null;
+
+        const helpers = takeGroup(ruleGroups, 'Helpers');
+        const streamWidgets = takeGroup(ruleGroups, 'Stream Widgets');
+        const scenesGroup = takeGroup(actionGroups, 'Scenes') || [];
+        const controlsGroup = (takeGroup(actionGroups, 'Controls') || []).filter((item) => item.action !== 'pauseRecording' && item.action !== 'resumeRecording');
+        const sourcesGroup = takeGroup(actionGroups, 'Sources') || [];
+        const studioControlGroup = takeGroup(actionGroups, 'Studio Control') || [];
+
+        const top = [
+            ...begin,
+            ...end,
+            pauseResume,
+            ...otherRules
+        ].filter(Boolean);
+
+        const middle = [
+            flyout('Stream Widgets', STUDIO_GROUP_ICONS['Stream Widgets'] || 'fa-solid fa-table-cells', streamWidgets),
+            ...[...ruleGroups.entries()].map(([groupName, items]) => flyout(groupName, STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group', items)),
+            flyout('Scenes', STUDIO_GROUP_ICONS['Scenes'] || 'fa-solid fa-clapperboard', actionEntries(scenesGroup)),
+            flyout('Controls', STUDIO_GROUP_ICONS['Controls'] || 'fa-solid fa-sliders', actionEntries(controlsGroup))
+        ].filter(Boolean);
+
+        const moreItems = [
+            {
+                name: game.i18n.localize(MODULE.ID + '.context-obs-refresh'),
+                icon: 'fa-solid fa-rotate',
+                onClick: () => this._refreshStudioCapabilities()
+            },
+            flyout('Helpers', STUDIO_GROUP_ICONS['Helpers'] || 'fa-solid fa-layer-group', helpers),
+            flyout('Sources', STUDIO_GROUP_ICONS['Sources'] || 'fa-solid fa-eye', actionEntries(sourcesGroup)),
+            flyout('Studio Control', STUDIO_GROUP_ICONS['Studio Control'] || 'fa-solid fa-satellite-dish', actionEntries(studioControlGroup)),
+            ...[...actionGroups.entries()].map(([groupName, items]) => flyout(groupName, STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group', actionEntries(items)))
+        ].filter(Boolean);
+
+        const sections = [
+            top,
+            middle,
+            [{
+                name: game.i18n.localize(MODULE.ID + '.context-obs-more'),
+                icon: 'fa-solid fa-ellipsis',
+                submenu: moreItems
+            }]
+        ].filter((section) => section.length);
+
+        const core = [];
+        if (!ruleSets.length && !actions.length) {
+            core.push({ name: game.i18n.localize(MODULE.ID + '.context-obs-no-rules'), icon: 'fa-solid fa-circle-info' });
+        }
+        sections.forEach((section, index) => {
+            if (index > 0 && core.length) core.push({ separator: true });
+            core.push(...section);
         });
 
         return { core };

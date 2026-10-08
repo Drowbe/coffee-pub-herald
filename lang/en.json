@@ -95,6 +95,8 @@
         "context-obs-no-rules": "No Studio automations configured",
         "context-obs-no-scenes": "No scenes from Studio",
         "context-obs-options": "Options",
+        "context-obs-more": "More",
+        "context-obs-pause-resume": "Pause/Resume Recording",
         "context-obs-refresh": "Refresh Automations",
         "context-obs-refreshed": "Studio automations refreshed",
         "context-obs-send": "Send",

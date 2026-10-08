@@ -59,16 +59,12 @@ The cameraman tabletop is the map feed. Foundry's `/stream` page is a separate c
 
 A separate **Studio** button sits in Blacksmith's menubar, next to View Mode. It talks directly to your Coffee Pub Studio automation server — set the server URL and token first under [Settings](userguide-settings.md#studio-obs). GM-only, and independent of Enable Broadcast.
 
-Left-click it to open the menu:
+Left-click it to open the menu. The rows are in session order, with a divider between each block:
 
-- **Your configured automations** — whatever rule sets are live on Studio's Automations tab appear as one-click items, grouped the way Studio groups them (e.g. everything under "Recording" collects into its own flyout). What shows here is always what Studio currently has wired up, not a fixed list — add or remove a rule set on Studio's side and it appears or disappears here too.
-  - **Some prompt for information before they run.** If a rule set needs something from you — an Episode Title before "Begin Session Recording" can start, say — clicking it opens a small dialog asking for it first (Studio itself decides what needs asking, and when: a field already answered isn't asked for again, and Studio's own automation is what clears it back out between recordings). Cancelling the dialog cancels the click — nothing fires.
-  - This is also how "set the description whenever you like, independent of Stop" works, if Studio has a rule set wired for it: click it, answer the prompt, done — no separate special control needed on Herald's side. See [architecture](../architecture/architecture-studio-integration.md).
-- **Scenes** — every OBS scene Studio knows about, one click to switch. The current scene gets a check mark.
-- **Sources** — Show, Hide, and Toggle, each opens a dropdown of every OBS source so you pick the exact one rather than typing a name.
-- **Controls** — start/pause/resume/stop recording, start/stop streaming.
-- **Studio Control** — the whole-studio actions Studio has enabled (wake audio, start/stop all windows, sync OBS).
-- **Options → Refresh Automations** — Herald caches what Studio reports so opening the menu doesn't hit the network every time. If you just changed something on Studio's side (added a rule set, ticked on a new action), refresh here to see it reflected.
+- **Begin Session Recording** and **End Session Recording** — the recording rule sets, one click each. If one of them needs a title or description first, a dialog asks for it. Cancelling asks for nothing.
+- **Pause/Resume Recording** — pauses while OBS is recording, and resumes otherwise.
+- **Stream Widgets**, **Scenes**, and **Controls** — flyouts. Scenes is every OBS scene, one click to switch, with the current scene checked. Controls is start/stop recording and streaming.
+- **More** — **Refresh Automations**, then **Helpers**, **Sources**, and **Studio Control**. Refresh reloads this menu after you change something on Studio's Automations tab. Sources is Show, Hide, and Toggle, each a dropdown of the real OBS sources. Studio Control is the whole-studio actions Studio has enabled (wake audio, start/stop all windows, sync OBS).
 
 The Studio button itself tells you whether OBS is actually recording: the icon turns into a pulsing red dot when Studio reports `recording: true`, and reverts the moment it isn't — whether recording was stopped from this menu, from inside OBS directly, or failed silently. It is polled every few seconds, not tied to which button you last clicked.
 
