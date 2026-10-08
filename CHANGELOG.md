@@ -5,15 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.0.5]
 
+### Changed
 
-## [14.0.4]
+- **Studio menu order.** Begin Session Recording, End Session Recording, and Pause/Resume Recording sit at the top. Stream Widgets, Scenes, and Controls follow, then **More** (Refresh Automations, Helpers, Sources, Studio Control), with a divider between each block. Pause/Resume uses the recording indicator: pause while OBS is recording, resume otherwise, and the two no longer repeat inside Controls. Anything else Studio reports is kept: an extra ungrouped rule stays in the first block, an extra rule-set group in the middle block, an extra action group under More. See [Studio (OBS) control](documentation/userguides/userguide-gm.md#studio-obs-control).
+  - Helpers, Sources, and Studio Control are a second flyout under More. Herald now passes nested `submenu` entries and separators through to Blacksmith's context menu. **Needs the matching Blacksmith context-menu fix** (`ui-context-menu.js`): without it, moving from More onto its child closes the menu, and near the right screen edge a child flyout covers the rows below it.
 
 ### Fixed
 
-- **Studio menu order.** Begin Session Recording, End Session Recording, and Pause/Resume Recording sit at the top. Stream Widgets, Scenes, and Controls follow, then **More** (Refresh Automations, Helpers, Sources, Studio Control). Pause/Resume uses the recording indicator: pause while OBS is recording, resume otherwise. Helpers, Sources, and Studio Control are a second flyout under More, which Blacksmith's context menu now keeps open when the pointer moves from the parent flyout onto the child.
 - **Scene Switch is the OBS scene list.** The Scenes flyout was still a single "Scene Switch" item that opened a text box asking for a scene name whenever `paramType` was not exactly `scene` or a scene entry had no `.name`. Studio already sends the scene list on `/capabilities`. Those names are now the flyout: one click switches, and the current scene is checked. A rule-set prompt whose name is a scene or source uses that same list as a dropdown instead of a blank text field.
-- **Studio status poll stops when the server refuses the connection.** With a Studio URL and token saved, Herald asked `GET /api/automations/status` every 2.5s for the whole session. When nothing was listening, the browser logged `net::ERR_CONNECTION_REFUSED` on every tick — the JavaScript `catch` cannot hide that network-panel line. After the first refusal the Studio button shows unreachable and the poll stops. Left-click opens a menu with **Retry connection** instead of the automations list; that click does not contact the server. Retry makes one attempt, and only a success resumes the 2.5-second recording poll. The poll does not start at all until both the URL and the token are set.
+- **Studio status poll stops when the server refuses the connection.** With a Studio URL and token saved, Herald asked `GET /api/automations/status` every 2.5s for the whole session. When nothing was listening, the browser logged `net::ERR_CONNECTION_REFUSED` on every tick — the JavaScript `catch` cannot hide that network-panel line. After the first refusal the Studio button shows a grey unplugged icon ("Studio server unreachable") and the poll stops. Left-click opens a menu with **Retry connection** instead of the automations list; that click does not contact the server. Retry makes one attempt, and only a success resumes the 2.5-second recording poll. The poll does not start at all until both the URL and the token are set. See [Studio integration architecture](documentation/architecture/architecture-studio-integration.md#the-recording-indicator).
+
+## [14.0.4]
 
 ### Added
 
