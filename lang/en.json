@@ -93,6 +93,7 @@
         "context-obs-retry-ok": "Studio connected",
         "context-obs-retry-failed": "Could not reach the Studio server",
         "context-obs-no-rules": "No Studio automations configured",
+        "context-obs-no-scenes": "No scenes from Studio",
         "context-obs-options": "Options",
         "context-obs-refresh": "Refresh Automations",
         "context-obs-refreshed": "Studio automations refreshed",

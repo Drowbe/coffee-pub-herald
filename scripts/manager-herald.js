@@ -87,7 +87,36 @@ const STUDIO_ACTION_ICONS = {
 // Studio's action entries carry a paramType describing what to collect before sending — a bare
 // scene/source name, or nothing at all for "unused". Values beyond 'scene'/'source' still get a
 // prompt (labelled generically) rather than being assumed to need nothing, since silently
-// skipping a required param would send the action broken.
+// skipping a required param would send the action broken. `param` is checked too: some payloads
+// put "scene" there and leave paramType off, which used to dump Scene Switch into a free-text box.
+function studioParamKind(item) {
+    return String(item?.paramType ?? item?.param ?? '').toLowerCase();
+}
+
+function isStudioSceneAction(item) {
+    return item?.action === 'sceneSwitch' || studioParamKind(item) === 'scene';
+}
+
+/**
+ * OBS scenes from /capabilities. Entries are `{name, current}` in the contract, but a bare
+ * string (or a `sceneName`) has shown up before — either way the menu needs a name to click.
+ * @param {unknown} raw
+ * @returns {Array<{name: string, current: boolean}>}
+ */
+function studioSceneEntries(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((scene) => {
+        if (typeof scene === 'string') {
+            const name = scene.trim();
+            return name ? [{ name, current: false }] : [];
+        }
+        if (!scene || typeof scene !== 'object') return [];
+        const name = String(scene.name ?? scene.sceneName ?? scene.scene ?? '').trim();
+        if (!name) return [];
+        return [{ name, current: !!(scene.current || scene.active || scene.isCurrent) }];
+    });
+}
+
 function studioParamPromptLabel(paramType) {
     if (!paramType) return null;
     const t = String(paramType).toLowerCase();
@@ -3682,12 +3711,21 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             if (!groups.has(groupName)) groups.set(groupName, []);
             groups.get(groupName).push(item);
         }
-        const scenes = Array.isArray(capabilities.scenes) ? capabilities.scenes : [];
+        const scenes = studioSceneEntries(capabilities.scenes);
         for (const [groupName, items] of groups) {
             const submenu = items.flatMap((item) => {
-                // A scene-targeted action with Studio's real scene list available: skip the
-                // prompt entirely and list the actual scenes as one-click entries.
-                if (item.paramType === 'scene' && scenes.length) {
+                // Scene Switch (and any other scene-targeted action) is the scene list itself.
+                // Blacksmith menus only nest one submenu level, and this item already lives under
+                // the Scenes flyout — so the flyout contents are the scene names, one click each.
+                // A typed "Scene name" box is what you get when this match fails, and it is the
+                // wrong control: Studio already told us the names.
+                if (isStudioSceneAction(item)) {
+                    if (!scenes.length) {
+                        return [{
+                            name: game.i18n.localize(MODULE.ID + '.context-obs-no-scenes'),
+                            icon: 'fa-solid fa-circle-info'
+                        }];
+                    }
                     return scenes.map((scene) => ({
                         name: scene.name,
                         icon: scene.current ? 'fa-solid fa-circle-check' : 'fa-solid fa-clapperboard',
@@ -3746,7 +3784,8 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         let param = null;
         if (promptLabel) {
             const sources = Array.isArray(this._studioCapabilitiesCache?.sources) ? this._studioCapabilitiesCache.sources : null;
-            const options = item.paramType === 'source' ? sources : null;
+            const sceneNames = isStudioSceneAction(item) ? studioSceneEntries(this._studioCapabilitiesCache?.scenes).map((s) => s.name) : null;
+            const options = studioParamKind(item) === 'source' ? sources : sceneNames;
             param = await this._promptStudioParam(humanizeStudioAction(item.action), promptLabel, options);
             if (param == null) return; // cancelled
         }
@@ -3848,11 +3887,23 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         // Studio's prompt defs are just {key, label} -- no field-type hint -- so "description"-ish
         // ones get a textarea by name match rather than a single-line input that hides most of
         // what's typed.
+        const scenes = studioSceneEntries(this._studioCapabilitiesCache?.scenes);
+        const sources = Array.isArray(this._studioCapabilitiesCache?.sources)
+            ? this._studioCapabilitiesCache.sources.filter((s) => typeof s === 'string' && s.trim())
+            : [];
         const fields = promptDefs.map((p, i) => {
-            const isMultiline = /description/i.test(`${p.key} ${p.label ?? ''}`);
+            const hint = `${p.key} ${p.label ?? ''}`;
+            const isMultiline = /description/i.test(hint);
+            // Prompt defs are only {key, label}. A scene or source field is still a list we
+            // already have — same reason Scene Switch is not a text box.
+            const sceneChoices = !isMultiline && /scene/i.test(hint) ? scenes : [];
+            const sourceChoices = !isMultiline && !sceneChoices.length && /source/i.test(hint) ? sources : [];
+            const choices = sceneChoices.length ? sceneChoices.map((s) => s.name) : sourceChoices;
             const field = isMultiline
                 ? `<textarea name="p${i}" rows="4"${i === 0 ? ' autofocus' : ''}></textarea>`
-                : `<input type="text" name="p${i}"${i === 0 ? ' autofocus' : ''}>`;
+                : choices.length
+                    ? `<select name="p${i}"${i === 0 ? ' autofocus' : ''}>${choices.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}</select>`
+                    : `<input type="text" name="p${i}"${i === 0 ? ' autofocus' : ''}>`;
             return `<label style="display:flex;flex-direction:column;gap:4px;">${escapeHtml(p.label ?? p.key)}${field}</label>`;
         }).join('');
         try {
