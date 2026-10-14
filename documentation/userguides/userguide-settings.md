@@ -40,6 +40,10 @@ Every Herald setting by its on-screen name. All of them are world settings — o
 
 **Show Cameraman Viewport Box** — draws a box on *your* canvas showing what the camera currently frames, so you can see what is going out without switching windows. Works while you and the camera are on the same scene. Also toggleable from the Herald menu.
 
+**Viewport Box Color** — the colour of that box, as a hex value; the swatch beside the field opens a picker. Orange by default.
+
+**Viewport Box Line Opacity** and **Viewport Box Fill Opacity** — how transparent the outline and the tint inside the box are, from 0 (invisible) to 1 (solid). Defaults are 1 for the line and 0.1 for the fill. Changes apply to the box immediately.
+
 ## Mode Configuration
 
 **Camera Mode** — the current mode. Usually changed from the Herald menu rather than here; see [Broadcast modes](userguide-broadcast-modes.md).

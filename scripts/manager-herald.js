@@ -12,6 +12,19 @@ function getSettingSafely(moduleId, key, def) {
     } catch (_) { return def; }
 }
 
+/**
+ * Parse a #rgb / #rrggbb colour string (leading # optional) to a 6-digit lowercase hex.
+ * @param {*} raw
+ * @param {string} fallback - returned (as given) when raw is not a colour, e.g. '#ff9800'
+ * @returns {string} '#rrggbb' or the fallback
+ */
+export function parseHexColor(raw, fallback) {
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(raw ?? '').trim());
+    if (!m) return fallback;
+    const hex = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
+    return '#' + hex.toLowerCase();
+}
+
 function matchUserBySetting(user, settingValue) {
     if (!user || !settingValue) return false;
     const tokens = String(settingValue).split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
@@ -5134,6 +5147,33 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
+     * Colour and opacities for the cameraman viewport box, from the world settings.
+     * A missing or unreadable value falls back to the original look (orange, solid line,
+     * 10% fill) rather than throwing mid-draw.
+     * @returns {{color: number, lineAlpha: number, fillAlpha: number}}
+     */
+    static _getCameramanBoxStyle() {
+        const hex = parseHexColor(getSettingSafely(MODULE.ID, 'broadcastCameramanBoxColor', '#ff9800'), '#ff9800');
+        const alpha = (key, def) => {
+            const n = Number(getSettingSafely(MODULE.ID, key, def));
+            return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : def;
+        };
+        return {
+            color: parseInt(hex.slice(1), 16),
+            lineAlpha: alpha('broadcastCameramanBoxLineOpacity', 1),
+            fillAlpha: alpha('broadcastCameramanBoxFillOpacity', 0.1)
+        };
+    }
+
+    /**
+     * onChange for the box colour/opacity settings: redraw from the last viewport state.
+     * Fires on every client; _drawCameramanBox is GM-only and a no-op elsewhere.
+     */
+    static _onCameramanBoxStyleChanged() {
+        this._drawCameramanBox(null);
+    }
+
+    /**
      * GM only: draw/update the cameraman viewport box overlay on canvas.stage.
      * The rectangle is in world coordinates, so it tracks the GM's own pan/zoom.
      * Line thickness and label are counter-scaled so they stay a constant screen size.
@@ -5159,7 +5199,7 @@ this._blacksmith.HookManager.registerHook({
 
         const gmScale = canvas.stage?.scale?.x || 1;
         const lineWidth = Math.max(2, 4 / gmScale); // constant on-screen thickness regardless of GM zoom
-        const color = 0xff9800; // orange
+        const { color, lineAlpha, fillAlpha } = this._getCameramanBoxStyle();
 
         // (Re)create the graphics if missing, destroyed, or orphaned by a canvas rebuild.
         if (!this._cameramanBoxGraphics || this._cameramanBoxGraphics.destroyed || this._cameramanBoxGraphics.parent !== layer) {
@@ -5176,9 +5216,12 @@ this._blacksmith.HookManager.registerHook({
 
         const g = this._cameramanBoxGraphics;
         g.clear();
-        g.lineStyle(lineWidth, color, 1);
-        g.beginFill(color, 0.10);
-        g.drawRect(left, top, worldW, worldH);
+        g.lineStyle(lineWidth, color, lineAlpha);
+        g.beginFill(color, fillAlpha);
+        // 8px on screen regardless of GM zoom (world units, like lineWidth), clamped so a tiny
+        // box cannot invert the corners.
+        const radius = Math.min(8 / gmScale, worldW / 2, worldH / 2);
+        g.drawRoundedRect(left, top, worldW, worldH, radius);
         g.endFill();
 
         // Label just inside the top-left corner (kept inside the box so it is never

@@ -3,10 +3,45 @@
 // ==================================================================
 
 import { MODULE } from './const.js';
-import { HeraldManager } from './manager-herald.js';
+import { HeraldManager, parseHexColor } from './manager-herald.js';
 import { StreamStatsWidget } from './widget-stats.js';
 
 const WORKFLOW_GROUP = 'run-the-game';
+
+const BOX_COLOR_KEY = 'broadcastCameramanBoxColor';
+const BOX_COLOR_DEFAULT = '#ff9800';
+
+/**
+ * Add a colour swatch beside the box-colour text field. The setting stays a plain String
+ * (Foundry's ColorField validates on read and can fail a world load on a bad stored value,
+ * the same reason Blacksmith injects swatches rather than declaring ColorField); the swatch
+ * just drives the text input, which remains what the form submits. Blacksmith's own swatch
+ * injection only covers Blacksmith's settings, so Herald adds this one.
+ */
+function injectBoxColorSwatch(element) {
+    try {
+        const root = element instanceof HTMLElement ? element : (element?.[0] ?? element?.element ?? null);
+        const control = root?.querySelector?.('[name="' + MODULE.ID + '.' + BOX_COLOR_KEY + '"]');
+        if (!control) return;
+        const fields = control.closest('.form-fields') ?? control.parentElement;
+        if (!fields || fields.querySelector('.herald-setting-swatch')) return;
+
+        const swatch = document.createElement('input');
+        swatch.type = 'color';
+        swatch.className = 'herald-setting-swatch';
+        swatch.setAttribute('aria-label', 'Pick a colour');
+        // No name: the text input is what the form submits.
+        swatch.value = parseHexColor(control.value, BOX_COLOR_DEFAULT);
+        swatch.addEventListener('input', () => {
+            control.value = swatch.value;
+            control.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        control.addEventListener('change', () => {
+            swatch.value = parseHexColor(control.value, BOX_COLOR_DEFAULT);
+        });
+        fields.appendChild(swatch);
+    } catch (_) { /* no swatch: the text field still works */ }
+}
 
 function registerHeader(id, labelKey, hintKey, level = 'H3') {
     game.settings.register(MODULE.ID, 'heading' + level + id, {
@@ -223,6 +258,50 @@ export function registerSettings() {
                 HeraldManager._onCameramanBoxSettingChanged(value === true || value === 'true');
             } catch (_) { /* manager may not be initialized yet */ }
         }
+    });
+
+    Hooks.on('renderSettingsConfig', (_app, element) => injectBoxColorSwatch(element));
+
+    const boxStyleChanged = () => {
+        try { HeraldManager._onCameramanBoxStyleChanged(); } catch (_) { /* manager may not be initialized yet */ }
+    };
+
+    game.settings.register(MODULE.ID, BOX_COLOR_KEY, {
+        name: MODULE.ID + '.' + BOX_COLOR_KEY + '-Label',
+        hint: MODULE.ID + '.' + BOX_COLOR_KEY + '-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: String,
+        default: BOX_COLOR_DEFAULT,
+        group: WORKFLOW_GROUP,
+        onChange: boxStyleChanged
+    });
+
+    game.settings.register(MODULE.ID, 'broadcastCameramanBoxLineOpacity', {
+        name: MODULE.ID + '.broadcastCameramanBoxLineOpacity-Label',
+        hint: MODULE.ID + '.broadcastCameramanBoxLineOpacity-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: Number,
+        default: 1,
+        range: { min: 0, max: 1, step: 0.05 },
+        group: WORKFLOW_GROUP,
+        onChange: boxStyleChanged
+    });
+
+    game.settings.register(MODULE.ID, 'broadcastCameramanBoxFillOpacity', {
+        name: MODULE.ID + '.broadcastCameramanBoxFillOpacity-Label',
+        hint: MODULE.ID + '.broadcastCameramanBoxFillOpacity-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: Number,
+        default: 0.1,
+        range: { min: 0, max: 1, step: 0.05 },
+        group: WORKFLOW_GROUP,
+        onChange: boxStyleChanged
     });
 
     registerHeader('broadcastModeConfiguration', 'headingH3BroadcastModeConfiguration-Label', 'headingH3BroadcastModeConfiguration-Hint', 'H3');

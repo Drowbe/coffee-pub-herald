@@ -80,3 +80,12 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.35; }
 }
+
+/* Settings form: colour swatch beside the viewport box colour text field. */
+.herald-setting-swatch {
+    flex: 0 0 36px;
+    width: 36px;
+    height: var(--input-height, 28px);
+    padding: 0;
+    cursor: pointer;
+}
