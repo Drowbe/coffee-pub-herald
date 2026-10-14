@@ -14,7 +14,7 @@ Foundry VTT **v13 and v14**.
 - **[Broadcast modes](userguides/userguide-broadcast-modes.md)** — the nine ways the camera can follow the action, and when each one is the right pick.
 - **[Settings](userguides/userguide-settings.md)** — every setting by its on-screen name.
 - **[Stream overlay](userguides/userguide-stream-widgets.md)** — MVP leaderboard on Foundry's `/stream` page, captured by Coffee Pub Studio.
-- **[GM guide](userguides/userguide-gm.md)** — running a session with a camera: the View Mode menu, the Tools menu, combat, Studio (OBS) control.
+- **[GM guide](userguides/userguide-gm.md)** — running a session with a camera: the Herald menu, the Tools menu, combat, Studio (OBS) control.
 - **[Player guide](userguides/userguide-player.md)** — what players see, and what the camera does with their view.
 
 ## Known problems

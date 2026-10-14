@@ -377,6 +377,17 @@ export function registerSettings() {
 
     registerHeader('studio', 'headingH3Studio-Label', 'headingH3Studio-Hint', 'H3');
 
+    game.settings.register(MODULE.ID, 'enableStudio', {
+        name: MODULE.ID + '.enableStudio-Label',
+        hint: MODULE.ID + '.enableStudio-Hint',
+        scope: 'world',
+        config: true,
+        requiresReload: false,
+        type: Boolean,
+        default: false,
+        group: WORKFLOW_GROUP
+    });
+
     game.settings.register(MODULE.ID, 'studioApiUrl', {
         name: MODULE.ID + '.studioApiUrl-Label',
         hint: MODULE.ID + '.studioApiUrl-Hint',

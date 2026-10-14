@@ -27,7 +27,7 @@ That is the whole setup. The camera client should now show the map with Foundry'
 
 With both clients up:
 
-1. On your screen, open the **View Mode** menu in the menubar.
+1. On your screen, open the **Herald** menu in the menubar.
 2. Pick **Party Spectator**.
 3. Move a party token on the map.
 

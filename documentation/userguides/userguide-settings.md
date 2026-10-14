@@ -6,7 +6,7 @@ Every Herald setting by its on-screen name. All of them are world settings — o
 
 ## General
 
-**Enable Broadcast** — turns the whole feature on. With it off, Herald does nothing and the View Mode menu is inert. **(reload)**
+**Enable Broadcast** — turns the whole feature on. With it off, Herald does nothing and the Herald menu is inert. **(reload)**
 
 **Broadcast User** — the user who serves as the camera. Pick from the dropdown of users in the world. Until this is set, the menubar shows *No cameraman*. **(reload)**
 
@@ -38,11 +38,11 @@ Every Herald setting by its on-screen name. All of them are world settings — o
 
 **Show Combat Bar in Broadcast** — keeps Blacksmith's combat bar visible on the broadcast. Often worth leaving on, since it tells viewers whose turn it is. Turn it off for a completely bare view.
 
-**Show Cameraman Viewport Box** — draws a box on *your* canvas showing what the camera currently frames, so you can see what is going out without switching windows. Works while you and the camera are on the same scene. Also toggleable from the View Mode menu.
+**Show Cameraman Viewport Box** — draws a box on *your* canvas showing what the camera currently frames, so you can see what is going out without switching windows. Works while you and the camera are on the same scene. Also toggleable from the Herald menu.
 
 ## Mode Configuration
 
-**Camera Mode** — the current mode. Usually changed from the View Mode menu rather than here; see [Broadcast modes](userguide-broadcast-modes.md).
+**Camera Mode** — the current mode. Usually changed from the Herald menu rather than here; see [Broadcast modes](userguide-broadcast-modes.md).
 
 **Party / Token Spectator View Fill (%)** — how much of the screen the framed group fills in the two spectator modes.
 
@@ -63,6 +63,8 @@ These widgets render on Foundry's `/stream` capture page, not on the cameraman t
 **Show MVP Leaderboard on Stream** — draws the lifetime MVP ranking on `/stream` as a 380 by 320 pixel Blacksmith tool window. Studio captures it with the selector `#herald-stats`. The title bar Auto-Hides so the crop is the board, not the chrome. Turning it off (or closing the window) hides the box without removing it, so an existing Studio region keeps a valid crop.
 
 ## Studio (OBS)
+
+**Enable Studio Support** — shows the Studio entries in the Herald menu and starts tracking Studio's recording state on the Herald button. Off by default; leave it off if you do not use Coffee Pub Studio, and Herald will not contact a Studio server at all. The two settings below are only used while this is on.
 
 **Studio Server URL** — the base address of your Coffee Pub Studio automation server, e.g. `https://<studio-host>:9500`. Herald appends the API paths itself; do not include them here.
 

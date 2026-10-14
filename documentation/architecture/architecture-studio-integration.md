@@ -21,7 +21,7 @@ This contract was reverse-engineered collaboratively with Studio's own author ov
 
 ## Why capabilities are cached, with an explicit refresh
 
-`_getObsMenuItems()` fetches `/capabilities` once and holds it in `_studioCapabilitiesCache` (a plain static field) so *opening* the Studio menu repeatedly does not hit the network every time. A GM changing something on Studio's Automations tab will not see the menu's shape (new rule sets, new actions) reflected until **Options → Refresh Automations** (`_refreshStudioCapabilities()`), which nulls the cache and re-fetches. The fetch itself also passes `cache: 'no-store'` — without it, the browser's own HTTP cache for the GET was observed serving stale data underneath the in-memory cache, independent of it. The cache is also invalidated automatically if `studioApiUrl`/`studioApiToken` change mid-session (`settingChange` hook), and reset on every page load (it is not persisted).
+`_getStudioMenuParts()` (called from `_getBroadcastMenu()` when `enableStudio` is on) fetches `/capabilities` once and holds it in `_studioCapabilitiesCache` (a plain static field) so *opening* the Studio menu repeatedly does not hit the network every time. A GM changing something on Studio's Automations tab will not see the menu's shape (new rule sets, new actions) reflected until **Options → Refresh Automations** (`_refreshStudioCapabilities()`), which nulls the cache and re-fetches. The fetch itself also passes `cache: 'no-store'` — without it, the browser's own HTTP cache for the GET was observed serving stale data underneath the in-memory cache, independent of it. The cache is also invalidated automatically if `studioApiUrl`/`studioApiToken` change mid-session (`settingChange` hook), and reset on every page load (it is not persisted).
 
 **This cache is never consulted for `prompts`.** *Clicking* a rule-set item always does its own live, uncached `_getFreshStudioPrompts()` fetch first — per Studio's own guidance, whether a field still needs asking can change between the menu opening and the click, so the menu's cached copy of `prompts` is only ever used to decide the icon/label, never to decide whether to show a dialog.
 
@@ -61,14 +61,14 @@ All Studio-related user feedback (`_showStudioToast`) goes through Blacksmith's 
 
 ## The recording indicator
 
-`_pollStudioStatus()` polls `/status` every `STUDIO_STATUS_POLL_MS` (2.5s) on the GM's client only (`game.user?.isGM` — no reason for every connected client to separately hit Studio's server for a `gmOnly` button), and only once both `studioApiUrl` and `studioApiToken` are set. On an actual state change it calls `_setStudioIndicator(mode)`, which unregisters and re-registers the `studio-obs` menubar tool with a different `icon`/`iconColor` — per Blacksmith's menubar contract, icon changes are only covered by the unregister/re-register path, not by the lighter `updateMenubarToolIconColor` (which only touches color). This only happens on transitions, not every tick.
+`_pollStudioStatus()` polls `/status` every `STUDIO_STATUS_POLL_MS` (2.5s) on the GM's client only (`game.user?.isGM` — no reason for every connected client to separately hit Studio's server for a `gmOnly` button), and only when `enableStudio` is on and both `studioApiUrl` and `studioApiToken` are set. On an actual state change it calls `_setStudioIndicator(mode)`, which unregisters and re-registers the merged `broadcast-view-mode` menubar tool (Studio no longer has a button of its own) with a different `icon`/`iconColor` — per Blacksmith's menubar contract, icon changes are only covered by the unregister/re-register path, not by the lighter `updateMenubarToolIconColor` (which only touches color). This only happens on transitions, not every tick.
 
 If the status request fails because nothing accepted the connection, the button switches to an unreachable icon (`fa-plug-circle-xmark`, tooltip "Studio server unreachable") and the poll **stops**. The browser prints `net::ERR_CONNECTION_REFUSED` for every failed `fetch` even when the `catch` swallows it, so a retry loop — even a slow one — keeps adding lines for as long as Studio is off. One console line is logged on that transition. The next left-click opens a menu with a single **Retry connection** item (`_studioRetryMenu`); opening that menu does not touch the network. Retry calls `_retryStudioConnection()`, which fetches `/capabilities` once. Success caches that response, resumes the 2.5s poll (`_kickStudioStatusPoll`, which only starts a poll that is stopped), and toasts "Studio connected". Failure leaves the button unreachable. An HTTP error (the server answered, but not 200) is not a refused connection: the poll keeps its 2.5s cadence and the automations menu stays as it was. A generation counter drops an in-flight poll that finishes after a stop or a pause, so it cannot reschedule itself.
 
 The pulse itself is pure CSS (`styles/broadcast.css`), keyed off the `fa-circle-dot` icon class the indicator swaps in:
 
 ```css
-[data-tool="studio-obs"] i.fa-circle-dot {
+[data-tool="broadcast-view-mode"] i.fa-circle-dot {
     animation: herald-studio-recording-pulse 1.8s ease-in-out infinite;
 }
 ```

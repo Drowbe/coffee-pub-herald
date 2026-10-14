@@ -69,10 +69,10 @@
     visibility: hidden !important;
 }
 
-/* Studio menubar button: pulse the icon while Studio reports OBS is actually recording.
+/* Herald menubar button (Studio recording state): pulse the icon while Studio reports OBS is actually recording.
    Driven purely by the icon class HeraldManager swaps in (fa-circle-dot) when recording is
    true -- no JS class toggling needed, so this can't drift from a Blacksmith menubar re-render. */
-[data-tool="studio-obs"] i.fa-circle-dot {
+[data-tool="broadcast-view-mode"] i.fa-circle-dot {
     animation: herald-studio-recording-pulse 1.8s ease-in-out infinite;
 }
 

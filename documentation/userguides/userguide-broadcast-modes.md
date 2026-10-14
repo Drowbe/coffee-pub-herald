@@ -2,7 +2,7 @@
 
 **Audience:** GMs choosing how the camera should follow the action.
 
-What each camera mode does and when to reach for it. Modes are switched from the **View Mode** menu in the menubar, or set as a default in [Settings](userguide-settings.md).
+What each camera mode does and when to reach for it. Modes are switched from the **Herald** menu in the menubar, or set as a default in [Settings](userguide-settings.md).
 
 ## The modes
 

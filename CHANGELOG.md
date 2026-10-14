@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Enable Studio Support setting.** Studio is opt-in, off by default. While it is off the menubar menu has no Studio entries and Herald never polls or contacts a Studio server. Worlds that already had a Studio URL and token saved (and no stored choice) are switched on once on load, so updating does not make Studio disappear.
+
+### Changed
+
+- **One menubar button instead of two.** The separate **Studio** button is gone; Studio now lives in the same **Herald** button as the view modes. A recording shows as a red dot on that button and an unreachable server as the grey unplugged icon, as before; the tooltip names the state.
+- **Short button label.** The button shows a fixed short name for the current mode (Manual, GM, Combatant, Combat, Tokens, Party, Map, Mirror, Follow) instead of the full mode name, so a long token or player name can no longer stretch the menubar. The full name moved to the tooltip.
+- **Menu layout.** Camera modes first, with the current one checked; then the Studio entries; then Tools and Options. **Hide/Show broadcast bar** was removed from the menu. **Show/Hide cameraman viewport box** and **Enable/Disable Broadcast** moved into **Options**.
+- **Recording item follows state.** Only **Begin Session Recording** is shown while OBS is idle and only **End Session Recording** while it is recording. Everything else Studio offers is in a **Studio** flyout; the old **More** level is flattened into it, so Sources and Studio Control are one level shallower.
+
 ## [14.0.5]
 
 ### Changed

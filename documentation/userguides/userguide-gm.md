@@ -4,13 +4,19 @@
 
 Driving the camera during play. For first-time setup see [Getting started](userguide-getting-started.md); for what each mode does see [Broadcast modes](userguide-broadcast-modes.md).
 
-## The View Mode menu
+## The Herald menu
 
-Everything lives in the **View Mode** control in Blacksmith's menubar. It is GM-only — players never see it. Left-click to open it.
+Everything lives in the single **Herald** button in Blacksmith's menubar. It is GM-only — players never see it. Left-click to open it.
 
-The menu shows the camera modes, plus **Mirror** and **Follow** submenus, plus a **Tools** submenu. What appears depends on the state of the game: combat modes only while a combat runs, Mirror and Follow only when there are party tokens on the scene.
+The button's label is the current camera mode in a word or two — **Manual**, **GM**, **Combatant**, **Combat**, **Tokens**, **Party**, **Map**, **Mirror**, **Follow** — and its tooltip has the full name (the player or token name for Mirror and Follow). While broadcast is off it reads **Broadcast**.
 
-The button itself tells you the camera's status. **No cameraman** means no Broadcast User is set. **Cameraman offline** means that user is not logged in — Herald will not send camera commands to a client that is not there, so nothing you pick will do anything until it connects.
+The menu is in order of how often you reach for it mid-session, with a divider between blocks:
+
+- **Camera modes** — the current one is checked. **Mirror** and **Follow** are submenus. Combat modes only appear while a combat runs; Mirror and Follow only when there are party tokens on the scene.
+- **Studio** — only when [Enable Studio Support](userguide-settings.md#studio-obs) is on. See [Studio (OBS) control](#studio-obs-control).
+- **Tools** and **Options** — Tools is the camera clean-up commands (below). Options holds **Show/Hide cameraman viewport box** and **Enable/Disable Broadcast**. While broadcast is off, the Enable item sits at the top level instead.
+
+The button also tells you the camera's status through its tooltip. **No cameraman** means no Broadcast User is set. **Cameraman offline** means that user is not logged in — Herald will not send camera commands to a client that is not there, so nothing you pick will do anything until it connects.
 
 ## Watching what goes out
 
@@ -57,15 +63,13 @@ The cameraman tabletop is the map feed. Foundry's `/stream` page is a separate c
 
 ## Studio (OBS) control
 
-A separate **Studio** button sits in Blacksmith's menubar, next to View Mode. It talks directly to your Coffee Pub Studio automation server — set the server URL and token first under [Settings](userguide-settings.md#studio-obs). GM-only, and independent of Enable Broadcast.
+Studio support is off by default. Turn on **Enable Studio Support** and set the server URL and token under [Settings](userguide-settings.md#studio-obs); until then the Herald menu has no Studio entries and Herald never contacts a Studio server. Worlds that had a URL and token saved before this setting existed are switched on automatically the first time they load. GM-only, and independent of Enable Broadcast.
 
-Left-click it to open the menu. The rows are in session order, with a divider between each block:
+Studio lives in the Herald menu, not a button of its own. It talks directly to your Coffee Pub Studio automation server.
 
-- **Begin Session Recording** and **End Session Recording** — the recording rule sets, one click each. If one of them needs a title or description first, a dialog asks for it. Cancelling asks for nothing.
-- **Pause/Resume Recording** — pauses while OBS is recording, and resumes otherwise.
-- **Stream Widgets**, **Scenes**, and **Controls** — flyouts. Scenes is every OBS scene, one click to switch, with the current scene checked. Controls is start/stop recording and streaming.
-- **More** — **Refresh Automations**, then **Helpers**, **Sources**, and **Studio Control**. Refresh reloads this menu after you change something on Studio's Automations tab. Sources is Show, Hide, and Toggle, each a dropdown of the real OBS sources. Studio Control is the whole-studio actions Studio has enabled (wake audio, start/stop all windows, sync OBS).
+- **Start Recording / Stop Recording** — directly in the menu, and only the one that applies: **Begin Session Recording** while OBS is idle, **End Session Recording** while it is recording. They are the recording rule sets, one click each. If one needs a title or description first, a dialog asks for it. Cancelling asks for nothing.
+- **Studio** flyout — **Pause/Resume Recording** (pauses while OBS is recording, resumes otherwise) and any other ungrouped rule sets; then **Stream Widgets**, **Scenes**, and **Controls**; then **Helpers**, **Sources**, **Studio Control**, and **Refresh Automations**. Scenes is every OBS scene, one click to switch, with the current scene checked. Controls is start/stop recording and streaming. Sources is Show, Hide, and Toggle, each a dropdown of the real OBS sources. Studio Control is the whole-studio actions Studio has enabled (wake audio, start/stop all windows, sync OBS). Refresh reloads the list after you change something on Studio's Automations tab.
 
-The Studio button itself tells you whether OBS is actually recording: the icon turns into a pulsing red dot when Studio reports `recording: true`, and reverts the moment it isn't — whether recording was stopped from this menu, from inside OBS directly, or failed silently. It is polled every few seconds, not tied to which button you last clicked.
+The Herald button itself tells you whether OBS is actually recording: the video icon turns into a red dot (and the tooltip adds "Recording") when Studio reports `recording: true`, and reverts the moment it isn't — whether recording was stopped from this menu, from inside OBS directly, or failed silently. It is polled every few seconds, not tied to which item you last clicked.
 
-If the Studio machine is off or the address does not answer, the button switches to a grey unplugged icon ("Studio server unreachable") and stops asking. Left-click then opens a short menu — **Studio server unreachable** and **Retry connection** — instead of the automations list. Retry makes one attempt. If Studio answers, the button goes back to normal and the recording poll starts again. If it doesn't, the button stays unplugged and the same menu is what you get next time. Nothing calls the server on its own after the first refusal.
+If the Studio machine is off or the address does not answer, the button switches to a grey unplugged icon and stops asking. The menu then shows **Studio server unreachable** and **Retry connection** in place of the Studio entries; the camera modes and Tools are unaffected. Retry makes one attempt. If Studio answers, the button goes back to normal and the recording poll starts again. If it doesn't, the button stays unplugged and the same entries are what you get next time. Nothing calls the server on its own after the first refusal.

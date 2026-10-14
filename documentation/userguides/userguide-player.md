@@ -33,4 +33,4 @@ This is worth knowing if your table streams publicly: ask your GM which they use
 
 ## Something looks wrong
 
-Herald problems appear on the camera, not on your client. If your own Foundry is misbehaving, the cause is elsewhere. If the *stream* looks wrong — interface showing, camera not moving, a window stuck on screen — tell your GM, who can fix it from the View Mode menu.
+Herald problems appear on the camera, not on your client. If your own Foundry is misbehaving, the cause is elsewhere. If the *stream* looks wrong — interface showing, camera not moving, a window stuck on screen — tell your GM, who can fix it from the Herald menu.

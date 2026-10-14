@@ -186,6 +186,7 @@ export class HeraldManager {
     static _studioPollGeneration = 0; // bumped on stop/pause so an in-flight poll cannot reschedule itself
     /** 'idle' | 'recording' | 'unreachable'. Re-register the menubar tool only when this changes. */
     static _studioIndicatorMode = 'idle';
+    static _broadcastMenubarRegistered = false; // the merged button exists, so _setStudioIndicator can re-register it
 
     /**
      * Settings read heavily during camera follow / pan / zoom paths.
@@ -310,9 +311,12 @@ this._blacksmith.HookManager.registerHook({
                     this._combatBarVisibilityOverride = null;
                 }
 
-                if (moduleId === MODULE.ID && (settingKey === 'studioApiUrl' || settingKey === 'studioApiToken')) {
+                if (moduleId === MODULE.ID && (settingKey === 'enableStudio' || settingKey === 'studioApiUrl' || settingKey === 'studioApiToken')) {
                     this._studioCapabilitiesCache = null;
+                    // Start (or, when Studio support is off, stop) the status poll; it also
+                    // resets the button's recording/unreachable indicator.
                     if (game.user?.isGM) this._startStudioStatusPoll();
+                    this._requestMenubarRender(true);
                 }
 
                 if (moduleId === MODULE.ID && (
@@ -379,7 +383,7 @@ this._blacksmith.HookManager.registerHook({
             this._registerCameraHooks();
             await this._registerBroadcastBarType();
             this._registerBroadcastTools();
-            this._registerObsMenubarButton();
+            await this._initStudioSupport();
             this._requestMenubarRender(true);
             // Initial setup at load: same check as the toggles (enabled? -> cameraman? -> sweep on?).
             this._applyToastWatchdogState();
@@ -2720,16 +2724,142 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
-     * Items for the broadcast-view-mode menubar tool. Returns zones object for Blacksmith context menu.
-     * Uses documented zone keys: core, gm (see Blacksmith API Context Menu - zones object).
-     * @returns {Object} { core: Array, gm?: Array }
+     * View-mode entries for the broadcast menu: the modes, then Mirror/Follow flyouts. The
+     * current mode shows a check in place of its icon.
+     * @returns {Array<{name: string, icon: string, onClick?: function, submenu?: Array}>}
+     * @private
      */
-    static _getViewModeMenuItems() {
-        const core = [];
+    static _getViewModeEntries() {
+        const current = this._getCachedBroadcastMode();
+        const currentKey = current === 'combatspectator' ? 'tokenspectator' : current;
+        const mode = (key, name, icon) => ({
+            name,
+            icon: currentKey === key ? 'fa-solid fa-circle-check' : icon,
+            onClick: async () => {
+                if (this._warnIfNotEnabled()) return;
+                if ((key === 'combat' || key === 'combatant') && !game.combat) {
+                    ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.');
+                    return;
+                }
+                await this._setBroadcastMode(key);
+            }
+        });
+
+        const entries = [
+            mode('manual', 'Manual', 'fa-solid fa-hand'),
+            mode('gmview', 'GM View', 'fa-solid fa-chess-king'),
+            ...(game.combat ? [
+                mode('combatant', game.i18n.localize(MODULE.ID + '.view-mode-combatant'), 'fa-solid fa-helmet-battle'),
+                mode('combat', game.i18n.localize(MODULE.ID + '.view-mode-combat'), 'fa-solid fa-swords')
+            ] : []),
+            mode('tokenspectator', game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator'), 'fa-solid fa-chess'),
+            mode('spectator', game.i18n.localize(MODULE.ID + '.view-mode-spectator'), 'fa-solid fa-users'),
+            mode('mapview', 'Map View', 'fa-solid fa-map')
+        ];
+
+        const mirrorSubmenu = this._getPartyTokensWithUsers().map(entry => entry.user).filter(Boolean).map((user) => {
+            const userId = user.id;
+            return {
+                name: user.name,
+                icon: current === `playerview-${userId}` ? 'fa-solid fa-circle-check' : 'fa-solid fa-helmet-battle',
+                onClick: async () => {
+                    if (this._warnIfNotEnabled()) return;
+                    await this._setBroadcastMode(`playerview-${userId}`);
+                }
+            };
+        });
+        if (mirrorSubmenu.length) {
+            entries.push({
+                name: game.i18n.localize(MODULE.ID + '.context-mirror-flyout'),
+                icon: 'fa-solid fa-helmet-battle',
+                submenu: mirrorSubmenu
+            });
+        }
+
+        const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
+        const followSubmenu = this._getPartyTokensOnCanvas().map((token) => {
+            const label = token?.actor?.name || token?.name || 'Token';
+            const tokenId = token.id;
+            return {
+                name: label,
+                icon: current === 'playerview-follow' && followTokenId === tokenId ? 'fa-solid fa-circle-check' : 'fa-solid fa-location-crosshairs',
+                onClick: async () => {
+                    if (this._warnIfNotEnabled()) return;
+                    await game.settings.set(MODULE.ID, 'broadcastFollowTokenId', tokenId);
+                    await this._setBroadcastMode('playerview-follow');
+                }
+            };
+        });
+        if (followSubmenu.length) {
+            entries.push({
+                name: 'Follow',
+                icon: 'fa-solid fa-location-crosshairs',
+                submenu: followSubmenu
+            });
+        }
+
+        return entries;
+    }
+
+    /**
+     * Contents of the Tools flyout (commands sent to the cameraman client).
+     * @private
+     */
+    static _getBroadcastToolEntries() {
+        const tool = (labelKey, icon, command) => ({
+            name: game.i18n.localize(MODULE.ID + '.' + labelKey),
+            icon,
+            onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand(command); }
+        });
+        return [
+            tool('context-tool-close-images', 'fa-solid fa-image', 'close-images'),
+            tool('context-tool-close-journals', 'fa-solid fa-book-open', 'close-journals'),
+            tool('context-tool-close-all', 'fa-solid fa-circle-xmark', 'close-all'),
+            tool('context-tool-close-toasts', 'fa-solid fa-comment-slash', 'close-toasts'),
+            tool('context-tool-refresh', 'fa-solid fa-rotate', 'refresh'),
+            tool('context-tool-toggle-combat-bar', 'fa-solid fa-browser', 'toggle-combat-bar'),
+            tool('context-tool-settings', 'fa-solid fa-gear', 'settings')
+        ];
+    }
+
+    /**
+     * Menu for the Herald menubar button, as a zones object for the Blacksmith context menu.
+     * Sections, in order of how often they are used mid-session:
+     *   1. view modes (GM, broadcast on)
+     *   2. Studio: the Begin/End recording item for the current state + a Studio flyout
+     *      (only when `enableStudio` is on; independent of enableBroadcast)
+     *   3. Tools flyout (GM, broadcast on) + Options flyout (cameraman box, enable/disable;
+     *      just the enable/disable item itself while broadcast is off)
+     * Async because the Studio entries come from Studio's capabilities (cached after the
+     * first fetch).
+     * @returns {Promise<{core: Array}>}
+     * @private
+     */
+    static async _getBroadcastMenu() {
         const enabled = this.isEnabled();
-        const labelKey = enabled ? MODULE.ID + '.context-disable-herald' : MODULE.ID + '.context-enable-herald';
-        core.push({
-            name: game.i18n.localize(labelKey),
+        const isGM = !!game.user?.isGM;
+        const core = [];
+        const addSection = (items) => {
+            const entries = items.filter(Boolean);
+            if (!entries.length) return;
+            if (core.length) core.push({ separator: true });
+            core.push(...entries);
+        };
+
+        if (enabled && isGM) addSection(this._getViewModeEntries());
+
+        const studio = await this._getStudioMenuParts();
+        addSection([
+            ...studio.primary,
+            studio.flyout.length ? {
+                name: game.i18n.localize(MODULE.ID + '.context-studio-flyout'),
+                icon: 'fa-solid fa-clapperboard',
+                submenu: studio.flyout
+            } : null
+        ]);
+
+        const toggleItem = {
+            name: game.i18n.localize(enabled ? MODULE.ID + '.context-disable-herald' : MODULE.ID + '.context-enable-herald'),
             icon: enabled ? 'fa-solid fa-toggle-off' : 'fa-solid fa-toggle-on',
             onClick: async () => {
                 const newValue = !enabled;
@@ -2739,19 +2869,11 @@ this._blacksmith.HookManager.registerHook({
                 await this._emitBroadcastWindowCommand('refresh', { force: true });
                 if (this._isBroadcastUser()) window.location.reload();
             }
-        });
-        core.push({
-            name: game.i18n.localize(MODULE.ID + '.context-hide-show-broadcast-bar'),
-            icon: 'fa-solid fa-bars',
-            onClick: () => {
-                if (this._warnIfNotEnabled()) return;
-                this._blacksmith.toggleSecondaryBar('broadcast');
-            }
-        });
+        };
 
         // Toggle the cameraman viewport box overlay on the GM canvas
         const cameramanBoxEnabled = this._isCameramanBoxEnabled();
-        core.push({
+        const cameramanBoxItem = {
             name: game.i18n.localize(cameramanBoxEnabled
                 ? MODULE.ID + '.context-hide-cameraman-box'
                 : MODULE.ID + '.context-show-cameraman-box'),
@@ -2760,83 +2882,22 @@ this._blacksmith.HookManager.registerHook({
                 if (this._warnIfNotEnabled()) return;
                 await game.settings.set(MODULE.ID, 'broadcastShowCameramanBox', !cameramanBoxEnabled);
             }
-        });
+        };
 
-        const zones = { core };
-        if (!game.user.isGM || !this.isEnabled()) return zones;
+        addSection([
+            enabled && isGM ? {
+                name: game.i18n.localize(MODULE.ID + '.context-tools-flyout'),
+                icon: 'fa-solid fa-wrench',
+                submenu: this._getBroadcastToolEntries()
+            } : null,
+            enabled ? {
+                name: game.i18n.localize(MODULE.ID + '.context-broadcast-options'),
+                icon: 'fa-solid fa-gear',
+                submenu: [cameramanBoxItem, toggleItem]
+            } : toggleItem
+        ]);
 
-        // GM-only zone: view modes + Tools flyout (Blacksmith API uses "gm" for this zone)
-        const gm = [
-            { name: 'Manual', icon: 'fa-solid fa-hand', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('manual'); } },
-            { name: 'GM View', icon: 'fa-solid fa-chess-king', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('gmview'); } },
-            ...(game.combat ? [
-                { name: game.i18n.localize(MODULE.ID + '.view-mode-combatant'), icon: 'fa-solid fa-helmet-battle', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combatant'); } },
-                { name: game.i18n.localize(MODULE.ID + '.view-mode-combat'), icon: 'fa-solid fa-swords', onClick: async () => { if (this._warnIfNotEnabled()) return; if (!game.combat) { ui.notifications?.info?.(game.i18n?.localize?.('coffee-pub-herald.notification-no-combat') ?? 'No active combat.'); return; } await this._setBroadcastMode('combat'); } }
-            ] : []),
-            { name: game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator'), icon: 'fa-solid fa-chess', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('tokenspectator'); } },
-            { name: game.i18n.localize(MODULE.ID + '.view-mode-spectator'), icon: 'fa-solid fa-users', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('spectator'); } },
-            { name: 'Map View', icon: 'fa-solid fa-map', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._setBroadcastMode('mapview'); } }
-        ];
-
-        const mirrorUsers = this._getPartyTokensWithUsers().map(entry => entry.user).filter(Boolean);
-        const mirrorSubmenu = mirrorUsers.map((user) => {
-            const userId = user.id;
-            return {
-                name: user.name,
-                icon: 'fa-solid fa-helmet-battle',
-                onClick: async () => {
-                    if (this._warnIfNotEnabled()) return;
-                    await this._setBroadcastMode(`playerview-${userId}`);
-                }
-            };
-        });
-        if (mirrorSubmenu.length) {
-            gm.push({
-                name: game.i18n.localize(MODULE.ID + '.context-mirror-flyout'),
-                icon: 'fa-solid fa-helmet-battle',
-                submenu: mirrorSubmenu
-            });
-        }
-
-        const followTokens = this._getPartyTokensOnCanvas();
-        const followSubmenu = followTokens.map((token) => {
-            const label = token?.actor?.name || token?.name || 'Token';
-            const tokenId = token.id;
-            return {
-                name: label,
-                icon: 'fa-solid fa-location-crosshairs',
-                onClick: async () => {
-                    if (this._warnIfNotEnabled()) return;
-                    await game.settings.set(MODULE.ID, 'broadcastFollowTokenId', tokenId);
-                    await this._setBroadcastMode('playerview-follow');
-                }
-            };
-        });
-        if (followSubmenu.length) {
-            gm.push({
-                name: 'Follow',
-                icon: 'fa-solid fa-location-crosshairs',
-                submenu: followSubmenu
-            });
-        }
-
-        const toolsSubmenu = [
-            { name: game.i18n.localize(MODULE.ID + '.context-tool-close-images'), icon: 'fa-solid fa-image', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-images'); } },
-            { name: game.i18n.localize(MODULE.ID + '.context-tool-close-journals'), icon: 'fa-solid fa-book-open', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-journals'); } },
-            { name: game.i18n.localize(MODULE.ID + '.context-tool-close-all'), icon: 'fa-solid fa-circle-xmark', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-all'); } },
-            { name: game.i18n.localize(MODULE.ID + '.context-tool-close-toasts'), icon: 'fa-solid fa-comment-slash', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('close-toasts'); } },
-            { name: game.i18n.localize(MODULE.ID + '.context-tool-refresh'), icon: 'fa-solid fa-rotate', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('refresh'); } },
-            { name: game.i18n.localize(MODULE.ID + '.context-tool-toggle-combat-bar'), icon: 'fa-solid fa-browser', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('toggle-combat-bar'); } },
-            { name: game.i18n.localize(MODULE.ID + '.context-tool-settings'), icon: 'fa-solid fa-gear', onClick: async () => { if (this._warnIfNotEnabled()) return; await this._emitBroadcastWindowCommand('settings'); } }
-        ];
-        gm.push({
-            name: game.i18n.localize(MODULE.ID + '.context-tools-flyout'),
-            icon: 'fa-solid fa-wrench',
-            submenu: toolsSubmenu
-        });
-
-        zones.gm = gm;
-        return zones;
+        return { core };
     }
 
     /**
@@ -3229,171 +3290,140 @@ this._blacksmith.HookManager.registerHook({
     }
 
     /**
-     * Register view mode button in main menubar (right section)
-     * Only shows when cameraman is connected and broadcast is active
+     * Register the single Herald button in the main menubar (right section). Its menu holds the
+     * view modes, the Studio controls (when Studio support is on) and Tools/Options — see
+     * _getBroadcastMenu.
      * @private
      */
     static _registerBroadcastMenubarButton() {
-        // Get mode display names
-        const getModeDisplayName = (mode) => {
-            if (mode === 'playerview-follow') {
-                const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
-                const tokenName = followTokenId ? canvas.tokens.get(followTokenId)?.name : null;
-                return tokenName || 'Follow';
-            }
-            if (typeof mode === 'string' && mode.startsWith('playerview-')) {
-                const userId = mode.replace('playerview-', '');
-                const user = game.users.get(userId);
-                const name = user?.name || 'Player';
-                return name;
-            }
-            const modeNames = {
-                'manual': 'Manual',
-                'gmview': 'GM View',
-                'combat': game.i18n.localize(MODULE.ID + '.view-mode-combat') || 'Combat',
-                'combatant': game.i18n.localize(MODULE.ID + '.view-mode-combatant') || 'Combatant',
-                'tokenspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
-                'combatspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
-                'spectator': game.i18n.localize(MODULE.ID + '.view-mode-spectator') || 'Party Spectator',
-                'mapview': 'Map View',
-                'playerview': 'Player View'
-            };
-            return modeNames[mode] || 'Manual';
-        };
+        const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', this._broadcastMenubarToolConfig());
 
-        // Get mode icon
-        const getModeIcon = (mode) => {
-            if (typeof mode === 'string' && mode.startsWith('playerview-')) {
-                return 'fa-solid fa-helmet-battle';
-            }
-            const modeIcons = {
-                'manual': 'fa-solid fa-hand',
-                'gmview': 'fa-solid fa-chess-king',
-                'combat': 'fa-solid fa-swords',
-                'combatant': 'fa-solid fa-helmet-battle',
-                'tokenspectator': 'fa-solid fa-chess',
-                'combatspectator': 'fa-solid fa-chess', // backwards compat
-                'spectator': 'fa-solid fa-users',
-                'mapview': 'fa-solid fa-map',
-                'playerview': 'fa-solid fa-helmet-battle'
-            };
-            return modeIcons[mode] || 'fa-solid fa-hand';
-        };
+        if (success) {
+            this._broadcastMenubarRegistered = true;
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Broadcast menubar button registered", "", true, false);
+            this._requestMenubarRender(true);
+        } else {
+            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to register broadcast menubar button", "", false, false);
+        }
+    }
 
-const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
-            icon: 'fa-solid fa-video',
+    /**
+     * Full display name for a broadcast mode (tooltip). Mirror/follow resolve to the player or
+     * token name, which is unbounded — never use this for the button label.
+     * @param {string} mode
+     * @returns {string}
+     * @private
+     */
+    static _getModeDisplayName(mode) {
+        if (mode === 'playerview-follow') {
+            const followTokenId = getSettingSafely(MODULE.ID, 'broadcastFollowTokenId', '');
+            const tokenName = followTokenId ? canvas.tokens.get(followTokenId)?.name : null;
+            return tokenName || 'Follow';
+        }
+        if (typeof mode === 'string' && mode.startsWith('playerview-')) {
+            const userId = mode.replace('playerview-', '');
+            return game.users.get(userId)?.name || 'Player';
+        }
+        const modeNames = {
+            'manual': 'Manual',
+            'gmview': 'GM View',
+            'combat': game.i18n.localize(MODULE.ID + '.view-mode-combat') || 'Combat',
+            'combatant': game.i18n.localize(MODULE.ID + '.view-mode-combatant') || 'Combatant',
+            'tokenspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
+            'combatspectator': game.i18n.localize(MODULE.ID + '.view-mode-tokenspectator') || 'Token Spectator',
+            'spectator': game.i18n.localize(MODULE.ID + '.view-mode-spectator') || 'Party Spectator',
+            'mapview': 'Map View',
+            'playerview': 'Player View'
+        };
+        return modeNames[mode] || 'Manual';
+    }
+
+    /**
+     * Short, fixed-vocabulary label for a broadcast mode (menubar button title). Mirror and
+     * follow collapse to "Mirror"/"Follow" — the player/token name goes in the tooltip.
+     * @param {string} mode
+     * @returns {string}
+     * @private
+     */
+    static _getModeShortLabel(mode) {
+        const short = (key, fallback) => {
+            const id = MODULE.ID + '.view-mode-short-' + key;
+            return game.i18n.has(id) ? game.i18n.localize(id) : fallback;
+        };
+        if (mode === 'playerview-follow') return short('follow', 'Follow');
+        if (typeof mode === 'string' && mode.startsWith('playerview-')) return short('mirror', 'Mirror');
+        const labels = {
+            'manual': ['manual', 'Manual'],
+            'gmview': ['gmview', 'GM'],
+            'combat': ['combat', 'Combat'],
+            'combatant': ['combatant', 'Combatant'],
+            'tokenspectator': ['tokenspectator', 'Tokens'],
+            'combatspectator': ['tokenspectator', 'Tokens'], // backwards compat
+            'spectator': ['spectator', 'Party'],
+            'mapview': ['mapview', 'Map'],
+            'playerview': ['mirror', 'Mirror']
+        };
+        const [key, fallback] = labels[mode] || labels.manual;
+        return short(key, fallback);
+    }
+
+    /**
+     * registerMenubarTool config for the Herald button. The label is the current mode's short
+     * name; Studio state (when Studio support is on) swaps icon and iconColor together — a
+     * plain iconColor-only change is too subtle to read as "recording" or "unreachable".
+     * @param {'idle'|'recording'|'unreachable'} [studioMode] - Studio state to render; defaults to the tracked one
+     * @private
+     */
+    static _broadcastMenubarToolConfig(studioMode = this._studioIndicatorMode) {
+        const studio = this._studioEnabled() ? studioMode : 'idle';
+        const recording = studio === 'recording';
+        const unreachable = studio === 'unreachable';
+        return {
+            icon: recording
+                ? 'fa-solid fa-circle-dot'
+                : unreachable
+                    ? 'fa-solid fa-plug-circle-xmark'
+                    : 'fa-solid fa-video',
             name: 'broadcast-view-mode',
             title: () => {
                 // Guarded: Blacksmith's menubar render calls title() without a try/catch,
                 // so a throw here would abort the whole render and freeze every tool label.
                 try {
                     if (!this.isEnabled()) {
-                        return game.i18n.localize(MODULE.ID + '.view-mode-title-disabled') || 'View Mode';
+                        return game.i18n.localize(MODULE.ID + '.view-mode-title-disabled') || 'Broadcast';
                     }
-                    // Show the current view mode whenever broadcast is enabled (matches the
-                    // cameraman box). Cameraman connection status is not surfaced here.
-                    return getModeDisplayName(this._getCachedBroadcastMode());
+                    return this._getModeShortLabel(this._getCachedBroadcastMode());
                 } catch (e) {
                     if (!this._viewModeLabelErrorLogged) {
                         this._viewModeLabelErrorLogged = true;
-                        console.error('Herald | view-mode title() threw (menubar would freeze):', e);
+                        console.error('Herald | broadcast button title() threw (menubar would freeze):', e);
                     }
-                    return game.i18n.localize(MODULE.ID + '.view-mode-title-disabled') || 'View Mode';
+                    return 'Broadcast';
                 }
             },
             tooltip: () => {
                 try {
                     const suffix = game.i18n.localize(MODULE.ID + '.view-mode-tooltip-suffix') || ' — Left-click: open menu';
-                    if (!this.isEnabled()) {
-                        return (game.i18n.localize(MODULE.ID + '.view-mode-tooltip-disabled') || 'View Mode (broadcast off)') + suffix;
+                    let text = this.isEnabled()
+                        ? this._getModeDisplayName(this._getCachedBroadcastMode())
+                        : (game.i18n.localize(MODULE.ID + '.view-mode-tooltip-disabled') || 'Broadcast (off)');
+                    if (this._studioEnabled()) {
+                        if (this._studioIndicatorMode === 'recording') text += ` · ${game.i18n.localize(MODULE.ID + '.context-obs-recording')}`;
+                        else if (this._studioIndicatorMode === 'unreachable') text += ` · ${game.i18n.localize(MODULE.ID + '.context-obs-unreachable')}`;
                     }
-                    return `${getModeDisplayName(this._getCachedBroadcastMode())}${suffix}`;
+                    return text + suffix;
                 } catch (e) {
                     if (!this._viewModeLabelErrorLogged) {
                         this._viewModeLabelErrorLogged = true;
-                        console.error('Herald | view-mode tooltip() threw (menubar would freeze):', e);
+                        console.error('Herald | broadcast button tooltip() threw (menubar would freeze):', e);
                     }
-                    return 'View Mode';
+                    return 'Broadcast';
                 }
             },
             zone: 'right',
             group: 'general',
             groupOrder: 999,
             order: 10, // After timer-section
-            moduleId: MODULE.ID,
-            gmOnly: true,
-            leaderOnly: false,
-            visible: () => {
-                // TODO: Add visibility checks after button is confirmed working
-                // Always show for now to debug
-                return true;
-            },
-            toggleable: false,
-            active: false,
-            iconColor: null,
-            buttonNormalTint: null,
-            buttonSelectedTint: null,
-            onClick: (event) => {
-                this._showBlacksmithContextMenu(event, this._getViewModeMenuItems(), 'herald-view-mode-menu');
-            },
-            contextMenuItems: () => []
-        });
-
-        if (success) {
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: View mode menubar button registered", "", true, false);
-            this._requestMenubarRender(true);
-        } else {
-            postConsoleAndNotification(MODULE.NAME, "BroadcastManager: Failed to register view mode menubar button", "", false, false);
-        }
-    }
-
-    /**
-     * Register the OBS/Studio menubar button. Left-click opens a Blacksmith context menu of
-     * studio commands (add new commands in _getObsMenuItems). Independent of the broadcast
-     * bar/enableBroadcast — this is a standalone GM utility for driving the Studio automation server.
-     * @private
-     */
-    static _registerObsMenubarButton() {
-        const api = this._blacksmith;
-        if (!api || typeof api.registerMenubarTool !== 'function') return;
-
-        const success = api.registerMenubarTool('studio-obs', this._studioMenubarToolConfig('idle'));
-
-        if (success) {
-            postConsoleAndNotification(MODULE.NAME, "HeraldManager: OBS menubar button registered", "", true, false);
-            if (game.user?.isGM) this._startStudioStatusPoll();
-        } else {
-            postConsoleAndNotification(MODULE.NAME, "HeraldManager: Failed to register OBS menubar button", "", false, false);
-        }
-    }
-
-    /**
-     * registerMenubarTool config for the Studio button. `mode` swaps both icon and
-     * iconColor together (a plain iconColor-only change is too subtle to read as "recording"
-     * or "unreachable").
-     * @param {'idle'|'recording'|'unreachable'} mode
-     * @private
-     */
-    static _studioMenubarToolConfig(mode) {
-        const recording = mode === 'recording';
-        const unreachable = mode === 'unreachable';
-        return {
-            icon: recording
-                ? 'fa-solid fa-circle-dot'
-                : unreachable
-                    ? 'fa-solid fa-plug-circle-xmark'
-                    : 'fa-solid fa-clapperboard',
-            name: 'studio-obs',
-            title: () => 'Studio',
-            tooltip: () => unreachable
-                ? 'Studio server unreachable'
-                : recording
-                    ? 'Studio commands (recording)'
-                    : 'Studio commands',
-            zone: 'right',
-            group: 'general',
-            groupOrder: 998,
-            order: 9,
             moduleId: MODULE.ID,
             gmOnly: true,
             leaderOnly: false,
@@ -3404,25 +3434,64 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
             buttonNormalTint: null,
             buttonSelectedTint: null,
             onClick: async (event) => {
-                const zones = await this._getObsMenuItems();
-                if (zones) this._showBlacksmithContextMenu(event, zones, 'herald-obs-menu');
+                const zones = await this._getBroadcastMenu();
+                this._showBlacksmithContextMenu(event, zones, 'herald-broadcast-menu');
             },
             contextMenuItems: () => []
         };
     }
 
     /**
-     * Re-register the Studio button for a connection/recording mode (icon/iconColor are only
-     * covered by the re-register path, per Blacksmith's menubar contract — no lighter update
-     * exists for swapping the icon itself, only for iconColor alone).
+     * Studio support is opt-in (`enableStudio`). Every Studio surface (menu entries, status
+     * poll, button indicator) checks this first.
+     * @returns {boolean}
+     * @private
+     */
+    static _studioEnabled() {
+        return !!getSettingSafely(MODULE.ID, 'enableStudio', false);
+    }
+
+    /**
+     * Studio setup at load: migrate worlds that configured Studio before `enableStudio` existed,
+     * then start the recording-status poll. The Studio controls themselves live in the merged
+     * broadcast menubar menu (see _getBroadcastMenu). Independent of enableBroadcast.
+     * @private
+     */
+    static async _initStudioSupport() {
+        await this._migrateStudioEnabledSetting();
+        if (game.user?.isGM) this._startStudioStatusPoll();
+    }
+
+    /**
+     * One-time: a world that already has a Studio URL and token but never saved a choice for
+     * `enableStudio` gets it switched on, so updating does not make the Studio menu vanish.
+     * Anyone who has saved the setting (on or off) is left alone.
+     * @private
+     */
+    static async _migrateStudioEnabledSetting() {
+        if (!game.user?.isGM || this._studioEnabled()) return;
+        try {
+            const stored = game.settings.storage.get('world')?.getSetting?.(`${MODULE.ID}.enableStudio`);
+            if (stored) return;
+            if (this._studioBaseUrl() && getSettingSafely(MODULE.ID, 'studioApiToken', '')) {
+                await game.settings.set(MODULE.ID, 'enableStudio', true);
+            }
+        } catch (_) { /* can't tell whether a choice was saved: leave Studio off */ }
+    }
+
+    /**
+     * Re-register the broadcast button for a Studio connection/recording mode. icon/iconColor
+     * are only covered by the re-register path, per Blacksmith's menubar contract — no lighter
+     * update exists for swapping the icon itself, only for iconColor alone.
      * @param {'idle'|'recording'|'unreachable'} mode
      * @private
      */
     static _setStudioIndicator(mode) {
         const api = this._blacksmith;
-        if (!api?.unregisterMenubarTool || !api?.registerMenubarTool) return;
-        api.unregisterMenubarTool('studio-obs');
-        api.registerMenubarTool('studio-obs', this._studioMenubarToolConfig(mode));
+        if (!this._broadcastMenubarRegistered || !api?.unregisterMenubarTool || !api?.registerMenubarTool) return;
+        api.unregisterMenubarTool('broadcast-view-mode');
+        api.registerMenubarTool('broadcast-view-mode', this._broadcastMenubarToolConfig(mode));
+        this._requestMenubarRender(false);
     }
 
     /**
@@ -3434,6 +3503,7 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
      */
     static _startStudioStatusPoll() {
         this._stopStudioStatusPoll();
+        if (!this._studioEnabled()) return;
         if (!this._studioBaseUrl() || !getSettingSafely(MODULE.ID, 'studioApiToken', '')) return;
         this._studioStatusPollActive = true;
         this._scheduleStudioStatusPoll(0, this._studioPollGeneration);
@@ -3513,7 +3583,7 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         if (generation !== this._studioPollGeneration) return;
         const base = this._studioBaseUrl();
         const token = getSettingSafely(MODULE.ID, 'studioApiToken', '');
-        if (!base || !token) {
+        if (!this._studioEnabled() || !base || !token) {
             this._stopStudioStatusPoll();
             return;
         }
@@ -3642,22 +3712,40 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
     }
 
     /**
-     * Menu items for the OBS menubar button, built live from Studio's /api/automations/capabilities
-     * `ruleSets` (the enabled automations configured right now — each `{name, group, event,
-     * prompts}`), not a hardcoded list — sending an event Studio has no rule for would silently
-     * do nothing. Each rule set's `prompts` (fields Studio currently needs answered before it can
-     * run) are re-checked live at click time by `_fireStudioRuleSet`, not read from this cached copy.
-     * @returns {Promise<Object|null>} zones object for _showBlacksmithContextMenu, or null on failure
+     * Studio entries for the merged broadcast menu, built live from Studio's
+     * /api/automations/capabilities `ruleSets` (the enabled automations configured right now —
+     * each `{name, group, event, prompts}`), not a hardcoded list — sending an event Studio has
+     * no rule for would silently do nothing. Each rule set's `prompts` (fields Studio currently
+     * needs answered before it can run) are re-checked live at click time by
+     * `_fireStudioRuleSet`, not read from this cached copy.
+     *
+     * `primary` entries sit directly in the menu: the Begin/End recording item that makes sense
+     * for the current state, or the unreachable/retry/not-configured notice. `flyout` is the
+     * contents of the Studio submenu. Both are empty when Studio support is off.
+     * @returns {Promise<{primary: Array, flyout: Array}>}
      * @private
      */
-    static async _getObsMenuItems() {
+    static async _getStudioMenuParts() {
+        const none = { primary: [], flyout: [] };
+        if (!this._studioEnabled()) return none;
+
+        if (!this._studioBaseUrl() || !getSettingSafely(MODULE.ID, 'studioApiToken', '')) {
+            return {
+                primary: [{ name: game.i18n.localize(MODULE.ID + '.context-obs-not-configured'), icon: 'fa-solid fa-triangle-exclamation' }],
+                flyout: []
+            };
+        }
+
         // A refused connection must not fetch on every click — that is another
         // ERR_CONNECTION_REFUSED. The menu is only the retry action until one succeeds.
-        if (this._studioIndicatorMode === 'unreachable') return this._studioRetryMenu();
+        if (this._studioIndicatorMode === 'unreachable') return { primary: this._studioRetryMenu().core, flyout: [] };
         const capabilities = this._studioCapabilitiesCache ?? await this._fetchStudioCapabilities({ silentNetworkFailure: true });
         if (!capabilities) {
-            if (this._studioIndicatorMode === 'unreachable') return this._studioRetryMenu();
-            return null;
+            if (this._studioIndicatorMode === 'unreachable') return { primary: this._studioRetryMenu().core, flyout: [] };
+            return {
+                primary: [{ name: game.i18n.localize(MODULE.ID + '.context-obs-load-failed'), icon: 'fa-solid fa-circle-exclamation' }],
+                flyout: []
+            };
         }
         this._studioCapabilitiesCache = capabilities;
 
@@ -3766,52 +3854,40 @@ const success = this._blacksmith.registerMenubarTool('broadcast-view-mode', {
         const sourcesGroup = takeGroup(actionGroups, 'Sources') || [];
         const studioControlGroup = takeGroup(actionGroups, 'Studio Control') || [];
 
-        const top = [
-            ...begin,
-            ...end,
-            pauseResume,
-            ...otherRules
-        ].filter(Boolean);
-
-        const middle = [
-            flyout('Stream Widgets', STUDIO_GROUP_ICONS['Stream Widgets'] || 'fa-solid fa-table-cells', streamWidgets),
-            ...[...ruleGroups.entries()].map(([groupName, items]) => flyout(groupName, STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group', items)),
-            flyout('Scenes', STUDIO_GROUP_ICONS['Scenes'] || 'fa-solid fa-clapperboard', actionEntries(scenesGroup)),
-            flyout('Controls', STUDIO_GROUP_ICONS['Controls'] || 'fa-solid fa-sliders', actionEntries(controlsGroup))
-        ].filter(Boolean);
-
-        const moreItems = [
-            {
-                name: game.i18n.localize(MODULE.ID + '.context-obs-refresh'),
-                icon: 'fa-solid fa-rotate',
-                onClick: () => this._refreshStudioCapabilities()
-            },
-            flyout('Helpers', STUDIO_GROUP_ICONS['Helpers'] || 'fa-solid fa-layer-group', helpers),
-            flyout('Sources', STUDIO_GROUP_ICONS['Sources'] || 'fa-solid fa-eye', actionEntries(sourcesGroup)),
-            flyout('Studio Control', STUDIO_GROUP_ICONS['Studio Control'] || 'fa-solid fa-satellite-dish', actionEntries(studioControlGroup)),
-            ...[...actionGroups.entries()].map(([groupName, items]) => flyout(groupName, STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group', actionEntries(items)))
-        ].filter(Boolean);
+        // Only the recording action that applies right now is promoted to the top level.
+        const primary = recording ? end : begin;
 
         const sections = [
-            top,
-            middle,
-            [{
-                name: game.i18n.localize(MODULE.ID + '.context-obs-more'),
-                icon: 'fa-solid fa-ellipsis',
-                submenu: moreItems
-            }]
-        ].filter((section) => section.length);
+            [pauseResume, ...otherRules],
+            [
+                flyout('Stream Widgets', STUDIO_GROUP_ICONS['Stream Widgets'] || 'fa-solid fa-table-cells', streamWidgets),
+                ...[...ruleGroups.entries()].map(([groupName, items]) => flyout(groupName, STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group', items)),
+                flyout('Scenes', STUDIO_GROUP_ICONS['Scenes'] || 'fa-solid fa-clapperboard', actionEntries(scenesGroup)),
+                flyout('Controls', STUDIO_GROUP_ICONS['Controls'] || 'fa-solid fa-sliders', actionEntries(controlsGroup))
+            ],
+            [
+                flyout('Helpers', STUDIO_GROUP_ICONS['Helpers'] || 'fa-solid fa-layer-group', helpers),
+                flyout('Sources', STUDIO_GROUP_ICONS['Sources'] || 'fa-solid fa-eye', actionEntries(sourcesGroup)),
+                flyout('Studio Control', STUDIO_GROUP_ICONS['Studio Control'] || 'fa-solid fa-satellite-dish', actionEntries(studioControlGroup)),
+                ...[...actionGroups.entries()].map(([groupName, items]) => flyout(groupName, STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group', actionEntries(items))),
+                {
+                    name: game.i18n.localize(MODULE.ID + '.context-obs-refresh'),
+                    icon: 'fa-solid fa-rotate',
+                    onClick: () => this._refreshStudioCapabilities()
+                }
+            ]
+        ].map((section) => section.filter(Boolean)).filter((section) => section.length);
 
-        const core = [];
+        const flyoutItems = [];
         if (!ruleSets.length && !actions.length) {
-            core.push({ name: game.i18n.localize(MODULE.ID + '.context-obs-no-rules'), icon: 'fa-solid fa-circle-info' });
+            flyoutItems.push({ name: game.i18n.localize(MODULE.ID + '.context-obs-no-rules'), icon: 'fa-solid fa-circle-info' });
         }
         sections.forEach((section, index) => {
-            if (index > 0 && core.length) core.push({ separator: true });
-            core.push(...section);
+            if (index > 0 && flyoutItems.length) flyoutItems.push({ separator: true });
+            flyoutItems.push(...section);
         });
 
-        return { core };
+        return { primary, flyout: flyoutItems };
     }
 
     /**
