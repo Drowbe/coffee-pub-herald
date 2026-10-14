@@ -5,11 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [14.0.7]
+
+### Added
+
+- **Viewport box color, transparency and rounded corners.** The cameraman viewport box on the GM canvas had a hard-coded orange and square corners. Corners now have an 8px radius (constant on screen at any GM zoom). New settings: **Viewport Box Color** (hex field with a colour swatch beside it), **Viewport Box Line Opacity** (default 1) and **Viewport Box Fill Opacity** (default 0.1). The box redraws as soon as one changes. Defaults reproduce the previous look. The colour is a plain String setting with an injected swatch rather than `ColorField`, following Blacksmith, because `ColorField` validates on read and can fail a world load on a bad stored value.
+
 ## [14.0.6]
 
 ### Added
 
-- **Viewport box color and transparency.** The cameraman viewport box on the GM canvas had a hard-coded orange. New settings: **Viewport Box Color** (hex field with a colour swatch beside it), **Viewport Box Line Opacity** (default 1) and **Viewport Box Fill Opacity** (default 0.1). The box redraws as soon as one changes. Defaults reproduce the previous look. The colour is a plain String setting with an injected swatch rather than `ColorField`, following Blacksmith, because `ColorField` validates on read and can fail a world load on a bad stored value.
 - **Enable Studio Support setting.** Studio is opt-in, off by default. While it is off the menubar menu has no Studio entries and Herald never polls or contacts a Studio server. Worlds that already had a Studio URL and token saved (and no stored choice) are switched on once on load, so updating does not make Studio disappear.
 
 ### Changed
