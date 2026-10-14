@@ -10,11 +10,12 @@ Everything lives in the single **Herald** button in Blacksmith's menubar. It is 
 
 The button's label is the current camera mode in a word or two — **Manual**, **GM**, **Combatant**, **Combat**, **Tokens**, **Party**, **Map**, **Mirror**, **Follow** — and its tooltip has the full name (the player or token name for Mirror and Follow). While broadcast is off it reads **Broadcast**.
 
-The menu is in order of how often you reach for it mid-session, with a divider between blocks:
+The menu has two tinted blocks:
 
-- **Camera modes** — the current one is checked. **Mirror** and **Follow** are submenus. Combat modes only appear while a combat runs; Mirror and Follow only when there are party tokens on the scene.
-- **Studio** — only when [Enable Studio Support](userguide-settings.md#studio-obs) is on. See [Studio (OBS) control](#studio-obs-control).
-- **Tools** and **Options** — Tools is the camera clean-up commands (below). Options holds **Show/Hide cameraman viewport box** and **Enable/Disable Broadcast**. While broadcast is off, the Enable item sits at the top level instead.
+- **Camera** (top):
+  - **Camera modes** — the current one is checked. **Mirror** and **Follow** are submenus. Combat modes only appear while a combat runs; Mirror and Follow only when there are party tokens on the scene.
+  - **Tools** and **Options** — Tools is the camera clean-up commands (below). Options holds **Show/Hide cameraman viewport box** and **Enable/Disable Broadcast**. While broadcast is off, the Enable item sits at the top level instead.
+- **Studio** (bottom, separate block) — only when [Enable Studio Support](userguide-settings.md#studio-obs) is on. See [Studio (OBS) control](#studio-obs-control).
 
 The button also tells you the camera's status through its tooltip. **No cameraman** means no Broadcast User is set. **Cameraman offline** means that user is not logged in — Herald will not send camera commands to a client that is not there, so nothing you pick will do anything until it connects.
 
@@ -67,8 +68,8 @@ Studio support is off by default. Turn on **Enable Studio Support** and set the 
 
 Studio lives in the Herald menu, not a button of its own. It talks directly to your Coffee Pub Studio automation server.
 
-- **Start Recording / Stop Recording** — directly in the menu, and only the one that applies: **Begin Session Recording** while OBS is idle, **End Session Recording** while it is recording. They are the recording rule sets, one click each. If one needs a title or description first, a dialog asks for it. Cancelling asks for nothing.
-- **Studio** flyout — **Pause/Resume Recording** (pauses while OBS is recording, resumes otherwise) and any other ungrouped rule sets; then **Stream Widgets**, **Scenes**, and **Controls**; then **Helpers**, **Sources**, **Studio Control**, and **Refresh Automations**. Scenes is every OBS scene, one click to switch, with the current scene checked. Controls is start/stop recording and streaming. Sources is Show, Hide, and Toggle, each a dropdown of the real OBS sources. Studio Control is the whole-studio actions Studio has enabled (wake audio, start/stop all windows, sync OBS). Refresh reloads the list after you change something on Studio's Automations tab.
+- **Start / Stop Recording** — directly in the Studio block, and only what applies: **Begin Session Recording** while OBS is idle; **End Session Recording** and **Pause/Resume Recording** while it is recording. Begin and End are the recording rule sets, one click each. If one needs a title or description first, a dialog asks for it. Cancelling asks for nothing.
+- **Studio** flyout — any other ungrouped rule sets (and Pause/Resume while OBS is idle); then **Stream Widgets**, **Scenes**, and **Controls**; then **Helpers**, **Sources**, **Studio Control**, and **Refresh Automations**. Scenes is every OBS scene, one click to switch, with the current scene checked. Controls is start/stop recording and streaming. Sources is Show, Hide, and Toggle, each a dropdown of the real OBS sources. Studio Control is the whole-studio actions Studio has enabled (wake audio, start/stop all windows, sync OBS). Refresh reloads the list after you change something on Studio's Automations tab.
 
 The Herald button itself tells you whether OBS is actually recording: the video icon turns into a red dot (and the tooltip adds "Recording") when Studio reports `recording: true`, and reverts the moment it isn't — whether recording was stopped from this menu, from inside OBS directly, or failed silently. It is polled every few seconds, not tied to which item you last clicked.
 

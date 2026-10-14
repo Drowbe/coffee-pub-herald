@@ -2824,15 +2824,15 @@ this._blacksmith.HookManager.registerHook({
 
     /**
      * Menu for the Herald menubar button, as a zones object for the Blacksmith context menu.
-     * Sections, in order of how often they are used mid-session:
-     *   1. view modes (GM, broadcast on)
-     *   2. Studio: the Begin/End recording item for the current state + a Studio flyout
-     *      (only when `enableStudio` is on; independent of enableBroadcast)
-     *   3. Tools flyout (GM, broadcast on) + Options flyout (cameraman box, enable/disable;
-     *      just the enable/disable item itself while broadcast is off)
+     * Two zones, so each group gets its own tinted block (a bare separator renders as a gap):
+     *   core — Herald: view modes (GM, broadcast on), then Tools flyout (GM, broadcast on) and
+     *          Options flyout (cameraman box, enable/disable; just the enable/disable item
+     *          itself while broadcast is off)
+     *   gm   — Studio: the recording actions for the current state + a Studio flyout (only
+     *          when `enableStudio` is on; independent of enableBroadcast)
      * Async because the Studio entries come from Studio's capabilities (cached after the
      * first fetch).
-     * @returns {Promise<{core: Array}>}
+     * @returns {Promise<{core: Array, gm: Array}>}
      * @private
      */
     static async _getBroadcastMenu() {
@@ -2849,14 +2849,14 @@ this._blacksmith.HookManager.registerHook({
         if (enabled && isGM) addSection(this._getViewModeEntries());
 
         const studio = await this._getStudioMenuParts();
-        addSection([
+        const gm = [
             ...studio.primary,
             studio.flyout.length ? {
                 name: game.i18n.localize(MODULE.ID + '.context-studio-flyout'),
                 icon: 'fa-solid fa-clapperboard',
                 submenu: studio.flyout
             } : null
-        ]);
+        ].filter(Boolean);
 
         const toggleItem = {
             name: game.i18n.localize(enabled ? MODULE.ID + '.context-disable-herald' : MODULE.ID + '.context-enable-herald'),
@@ -2897,7 +2897,7 @@ this._blacksmith.HookManager.registerHook({
             } : toggleItem
         ]);
 
-        return { core };
+        return { core, gm };
     }
 
     /**
@@ -3854,11 +3854,13 @@ this._blacksmith.HookManager.registerHook({
         const sourcesGroup = takeGroup(actionGroups, 'Sources') || [];
         const studioControlGroup = takeGroup(actionGroups, 'Studio Control') || [];
 
-        // Only the recording action that applies right now is promoted to the top level.
-        const primary = recording ? end : begin;
+        // Only the recording actions that apply right now are promoted to the top level: Begin
+        // while idle; End and Pause/Resume while recording (pause is only useful then, and it
+        // is not repeated inside the flyout).
+        const primary = recording ? [...end, pauseResume].filter(Boolean) : begin;
 
         const sections = [
-            [pauseResume, ...otherRules],
+            [recording ? null : pauseResume, ...otherRules],
             [
                 flyout('Stream Widgets', STUDIO_GROUP_ICONS['Stream Widgets'] || 'fa-solid fa-table-cells', streamWidgets),
                 ...[...ruleGroups.entries()].map(([groupName, items]) => flyout(groupName, STUDIO_GROUP_ICONS[groupName] || 'fa-solid fa-layer-group', items)),
